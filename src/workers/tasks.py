@@ -3,8 +3,14 @@ from typing import Any
 
 from loguru import logger
 
-from src.database import close_redis
-from src.services.ai_service import generate_agent_response
+from src.database import close_postgres, close_redis
+from src.services.ai_service import generate_agent_result
+from src.services.conversation_service import (
+    init_conversation_schema,
+    save_conversation_message,
+    save_hubspot_sync_event,
+)
+from src.services.hubspot_service import sync_hubspot_lead
 from src.services.session_service import save_session_message
 from src.workers.celery_app import celery_app
 
@@ -75,6 +81,8 @@ def _extract_facebook_text_messages(payload: dict[str, Any]) -> list[dict[str, s
 
 async def _save_message_events(message_events: list[dict[str, str]]) -> None:
     try:
+        await init_conversation_schema()
+
         for event in message_events:
             sender_id = event["sender_id"]
             user_message = event["text"]
@@ -84,14 +92,45 @@ async def _save_message_events(message_events: list[dict[str, str]]) -> None:
                 role="user",
                 content=user_message,
             )
-            assistant_response = await generate_agent_response(
+            await save_conversation_message(
+                sender_id=sender_id,
+                role="user",
+                content=user_message,
+            )
+
+            agent_result = await generate_agent_result(
                 sender_id=sender_id,
                 user_message=user_message,
             )
+            assistant_response = agent_result["response"]
             await save_session_message(
                 sender_id,
                 role="assistant",
                 content=assistant_response,
             )
+            await save_conversation_message(
+                sender_id=sender_id,
+                role="assistant",
+                content=assistant_response,
+                intent=agent_result["intent"],
+                action=agent_result["action"],
+                metadata=agent_result["metadata"],
+            )
+            sync_result = await sync_hubspot_lead(
+                sender_id=sender_id,
+                intent=agent_result["intent"],
+                action=agent_result["action"],
+                metadata=agent_result["metadata"],
+            )
+            await save_hubspot_sync_event(
+                sender_id=sender_id,
+                status=sync_result.status,
+                hubspot_contact_id=sync_result.contact_id,
+                action=sync_result.action,
+                reason=sync_result.reason,
+                intent=agent_result["intent"],
+                payload=agent_result["metadata"],
+            )
     finally:
+        await close_postgres()
         await close_redis()

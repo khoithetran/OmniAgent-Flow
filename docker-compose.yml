@@ -21,6 +21,22 @@ services:
       REDIS_DB: 0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-omniagent_knowledge}
+      RAG_EMBEDDING_SIZE: ${RAG_EMBEDDING_SIZE:-384}
+      RAG_DENSE_WEIGHT: ${RAG_DENSE_WEIGHT:-0.65}
+      RAG_BM25_WEIGHT: ${RAG_BM25_WEIGHT:-0.35}
+      RAG_CANDIDATE_LIMIT: ${RAG_CANDIDATE_LIMIT:-20}
+      RAG_BM25_CORPUS_LIMIT: ${RAG_BM25_CORPUS_LIMIT:-500}
+      RAG_ENABLE_RERANKER: ${RAG_ENABLE_RERANKER:-false}
+      RAG_RERANKER_MODEL: ${RAG_RERANKER_MODEL:-BAAI/bge-reranker-base}
+      HUBSPOT_SYNC_ENABLED: ${HUBSPOT_SYNC_ENABLED:-false}
+      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:-}
+      HUBSPOT_BASE_URL: ${HUBSPOT_BASE_URL:-https://api.hubapi.com}
+      HUBSPOT_TIMEOUT_SECONDS: ${HUBSPOT_TIMEOUT_SECONDS:-10}
       SESSION_TTL_SECONDS: 1800
       <<: *postgres-connection
     volumes:
@@ -30,6 +46,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: unless-stopped
 
   worker:
@@ -45,6 +63,22 @@ services:
       REDIS_DB: 0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-omniagent_knowledge}
+      RAG_EMBEDDING_SIZE: ${RAG_EMBEDDING_SIZE:-384}
+      RAG_DENSE_WEIGHT: ${RAG_DENSE_WEIGHT:-0.65}
+      RAG_BM25_WEIGHT: ${RAG_BM25_WEIGHT:-0.35}
+      RAG_CANDIDATE_LIMIT: ${RAG_CANDIDATE_LIMIT:-20}
+      RAG_BM25_CORPUS_LIMIT: ${RAG_BM25_CORPUS_LIMIT:-500}
+      RAG_ENABLE_RERANKER: ${RAG_ENABLE_RERANKER:-false}
+      RAG_RERANKER_MODEL: ${RAG_RERANKER_MODEL:-BAAI/bge-reranker-base}
+      HUBSPOT_SYNC_ENABLED: ${HUBSPOT_SYNC_ENABLED:-false}
+      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:-}
+      HUBSPOT_BASE_URL: ${HUBSPOT_BASE_URL:-https://api.hubapi.com}
+      HUBSPOT_TIMEOUT_SECONDS: ${HUBSPOT_TIMEOUT_SECONDS:-10}
       SESSION_TTL_SECONDS: 1800
       <<: *postgres-connection
     volumes:
@@ -54,6 +88,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: unless-stopped
 
   redis:
@@ -90,5 +126,16 @@ services:
       retries: 10
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant
+    container_name: omniagent-flow-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  qdrant_data:

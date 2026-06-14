@@ -8,13 +8,16 @@ from loguru import logger
 
 from src.api.webhook import router as webhook_router
 from src.config import get_settings
-from src.database import close_redis, init_redis
+from src.database import close_postgres, close_redis, init_redis
+from src.services.conversation_service import init_conversation_schema
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_redis()
+    await init_conversation_schema()
     yield
+    await close_postgres()
     await close_redis()
 
 

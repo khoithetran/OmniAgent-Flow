@@ -1,7 +1,7 @@
 from functools import lru_cache
 from urllib.parse import quote
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +28,50 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/2",
         alias="CELERY_RESULT_BACKEND",
     )
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OPENAI_API_KEY",
+            "OPENAI-API-KEY",
+            "openai-api-key",
+            "openai_api_key",
+        ),
+    )
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias=AliasChoices(
+            "OPENAI_MODEL",
+            "OPENAI-MODEL",
+            "openai-model",
+            "openai_model",
+        ),
+    )
+    qdrant_host: str = Field(default="localhost", alias="QDRANT_HOST")
+    qdrant_port: int = Field(default=6333, alias="QDRANT_PORT")
+    qdrant_collection: str = Field(
+        default="omniagent_knowledge",
+        alias="QDRANT_COLLECTION",
+    )
+    rag_embedding_size: int = Field(default=384, alias="RAG_EMBEDDING_SIZE")
+    rag_dense_weight: float = Field(default=0.65, alias="RAG_DENSE_WEIGHT")
+    rag_bm25_weight: float = Field(default=0.35, alias="RAG_BM25_WEIGHT")
+    rag_candidate_limit: int = Field(default=20, alias="RAG_CANDIDATE_LIMIT")
+    rag_bm25_corpus_limit: int = Field(default=500, alias="RAG_BM25_CORPUS_LIMIT")
+    rag_enable_reranker: bool = Field(default=False, alias="RAG_ENABLE_RERANKER")
+    rag_reranker_model: str = Field(
+        default="BAAI/bge-reranker-base",
+        alias="RAG_RERANKER_MODEL",
+    )
+    hubspot_access_token: SecretStr | None = Field(
+        default=None,
+        alias="HUBSPOT_ACCESS_TOKEN",
+    )
+    hubspot_base_url: str = Field(
+        default="https://api.hubapi.com",
+        alias="HUBSPOT_BASE_URL",
+    )
+    hubspot_sync_enabled: bool = Field(default=False, alias="HUBSPOT_SYNC_ENABLED")
+    hubspot_timeout_seconds: float = Field(default=10.0, alias="HUBSPOT_TIMEOUT_SECONDS")
     postgres_dsn_override: SecretStr | None = Field(
         default=None,
         alias="POSTGRES_DSN",
@@ -67,6 +111,26 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def openai_api_key_value(self) -> str | None:
+        if self.openai_api_key is None:
+            return None
+
+        api_key = self.openai_api_key.get_secret_value().strip()
+        return api_key or None
+
+    @property
+    def qdrant_url(self) -> str:
+        return f"http://{self.qdrant_host}:{self.qdrant_port}"
+
+    @property
+    def hubspot_access_token_value(self) -> str | None:
+        if self.hubspot_access_token is None:
+            return None
+
+        access_token = self.hubspot_access_token.get_secret_value().strip()
+        return access_token or None
 
     @property
     def postgres_dsn(self) -> str:
