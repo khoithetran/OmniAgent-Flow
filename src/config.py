@@ -34,6 +34,9 @@ class Settings(BaseSettings):
         default=300, alias="PENDING_CRAWL_TTL_SECONDS"
     )
 
+    # LLM response cache
+    cache_ttl_seconds: int = Field(default=3600, alias="CACHE_TTL_SECONDS")
+
     # OpenAI
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
@@ -56,6 +59,9 @@ class Settings(BaseSettings):
     )
     telegram_webhook_secret_token: SecretStr | None = Field(
         default=None, alias="TELEGRAM_WEBHOOK_SECRET_TOKEN"
+    )
+    telegram_timeout_seconds: float = Field(
+        default=10.0, alias="TELEGRAM_TIMEOUT_SECONDS"
     )
 
     # ------------------------------------------------------------------
