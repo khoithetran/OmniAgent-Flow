@@ -15,16 +15,16 @@
 - Triển khai *Hybrid Search* (Dense Retrieval + BM25).
 - Tích hợp *Reranking* (Cohere Rerank hoặc BGE-Reranker) để tối ưu hóa tri thức trích xuất.
 
-## Phase 3: Integration & Conversation Insights [ ]
+## Phase 3: Integration & Conversation Insights [x]
 
 - [x] Task 3.1: Thiết lập cơ sở dữ liệu **PostgreSQL** để lưu trữ lịch sử hội thoại, Metadata và các thuộc tính Intent đã phân tách từ Phase 2.
 - [x] Task 3.2: Kết nối Backend với HubSpot Developer API để tự động đồng bộ và cập nhật dữ liệu Lead dựa trên Insight thu được từ cuộc trò chuyện.
-- [ ] Task 3.3: Viết webhook đẩy thông báo sự kiện Realtime qua Telegram Bot.
+- [x] Task 3.3: Viết webhook đẩy thông báo sự kiện Realtime qua Telegram Bot.
 
-## Phase 4: AI Observability & Monitoring [ ]
+## Phase 4: AI Observability & Monitoring [x]
 
-- [ ] Task 4.1: Tích hợp nền tảng AI Observability **LangFuse** để giám sát hệ thống LLM:
+- [x] Task 4.1: Tích hợp nền tảng AI Observability **LangFuse** để giám sát hệ thống LLM:
 - Theo dõi lượng Token tiêu thụ, chi phí API và độ trễ (Latency) của từng bước trong LangGraph.
 - Thiết lập bộ tiêu chí *LLM Evaluation* để đánh giá tự động độ trung thực (Faithfulness) và mức độ liên quan (Answer Relevance) của câu trả lời.
-- [ ] Task 4.2: Viết Unit Test cho hệ thống API, Agent và Worker.
-- [ ] Task 4.3: Kết nối dữ liệu PostgreSQL với Looker Studio để vẽ Dashboard báo cáo về phân tích hành vi người dùng (Conversation Insights).
+- [x] Task 4.2: Viết Unit Test cho hệ thống API, Agent và Worker.
+- [x] Task 4.3: Kết nối dữ liệu PostgreSQL với Looker Studio để vẽ Dashboard báo cáo về phân tích hành vi người dùng (Conversation Insights).

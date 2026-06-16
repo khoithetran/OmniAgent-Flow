@@ -1,3 +1,4 @@
+import time
 from enum import Enum
 from typing import Any
 import unicodedata
@@ -6,6 +7,10 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
+from src.services.observability_service import (
+    is_observability_enabled,
+    record_intent_generation,
+)
 
 
 class CustomerIntent(str, Enum):
@@ -236,11 +241,13 @@ async def extract_customer_intent(
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key)
+        started_at = time.perf_counter()
         response = await client.responses.parse(
             model=settings.openai_model,
             input=_build_extraction_input(user_message, session_history),
             text_format=CustomerIntentExtraction,
         )
+        latency_ms = (time.perf_counter() - started_at) * 1000
         parsed_output = response.output_parsed
 
         if parsed_output is None:
@@ -252,7 +259,23 @@ async def extract_customer_intent(
             model=settings.openai_model,
             intent=parsed_output.intent.value,
             confidence=parsed_output.confidence,
+            latency_ms=latency_ms,
         )
+
+        if is_observability_enabled():
+            from src.services.observability_service import _get_client  # local import to avoid cycles
+
+            record_intent_generation(
+                trace=_get_client().trace(
+                    name="intent_classification_call",
+                    user_id=sender_id,
+                ),
+                model=settings.openai_model,
+                user_message=user_message,
+                output=parsed_output.model_dump(mode="json"),
+                usage={},
+                latency_ms=latency_ms,
+            )
         return parsed_output
     except Exception:
         logger.exception(

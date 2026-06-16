@@ -72,6 +72,28 @@ class Settings(BaseSettings):
     )
     hubspot_sync_enabled: bool = Field(default=False, alias="HUBSPOT_SYNC_ENABLED")
     hubspot_timeout_seconds: float = Field(default=10.0, alias="HUBSPOT_TIMEOUT_SECONDS")
+    telegram_notifications_enabled: bool = Field(
+        default=False, alias="TELEGRAM_NOTIFICATIONS_ENABLED"
+    )
+    telegram_bot_token: SecretStr | None = Field(
+        default=None, alias="TELEGRAM_BOT_TOKEN"
+    )
+    telegram_chat_id: SecretStr | None = Field(
+        default=None, alias="TELEGRAM_CHAT_ID"
+    )
+    telegram_timeout_seconds: float = Field(
+        default=10.0, alias="TELEGRAM_TIMEOUT_SECONDS"
+    )
+    langfuse_enabled: bool = Field(default=False, alias="LANGFUSE_ENABLED")
+    langfuse_public_key: SecretStr | None = Field(
+        default=None, alias="LANGFUSE_PUBLIC_KEY"
+    )
+    langfuse_secret_key: SecretStr | None = Field(
+        default=None, alias="LANGFUSE_SECRET_KEY"
+    )
+    langfuse_host: str = Field(
+        default="https://cloud.langfuse.com", alias="LANGFUSE_HOST"
+    )
     postgres_dsn_override: SecretStr | None = Field(
         default=None,
         alias="POSTGRES_DSN",
@@ -131,6 +153,38 @@ class Settings(BaseSettings):
 
         access_token = self.hubspot_access_token.get_secret_value().strip()
         return access_token or None
+
+    @property
+    def telegram_bot_token_value(self) -> str | None:
+        if self.telegram_bot_token is None:
+            return None
+
+        token = self.telegram_bot_token.get_secret_value().strip()
+        return token or None
+
+    @property
+    def telegram_chat_id_value(self) -> str | None:
+        if self.telegram_chat_id is None:
+            return None
+
+        chat_id = self.telegram_chat_id.get_secret_value().strip()
+        return chat_id or None
+
+    @property
+    def langfuse_public_key_value(self) -> str | None:
+        if self.langfuse_public_key is None:
+            return None
+
+        key = self.langfuse_public_key.get_secret_value().strip()
+        return key or None
+
+    @property
+    def langfuse_secret_key_value(self) -> str | None:
+        if self.langfuse_secret_key is None:
+            return None
+
+        key = self.langfuse_secret_key.get_secret_value().strip()
+        return key or None
 
     @property
     def postgres_dsn(self) -> str:

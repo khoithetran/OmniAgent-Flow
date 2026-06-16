@@ -12,6 +12,7 @@ from src.services.conversation_service import (
 )
 from src.services.hubspot_service import sync_hubspot_lead
 from src.services.session_service import save_session_message
+from src.services.telegram_service import send_telegram_notification
 from src.workers.celery_app import celery_app
 
 app = celery_app
@@ -131,6 +132,56 @@ async def _save_message_events(message_events: list[dict[str, str]]) -> None:
                 intent=agent_result["intent"],
                 payload=agent_result["metadata"],
             )
+
+            # Realtime push to Telegram so on-call humans see hot leads,
+            # CRM failures, and handoff requests the moment they happen.
+            await _maybe_notify_telegram(
+                sender_id=sender_id,
+                agent_result=agent_result,
+                hubspot_status=sync_result.status,
+                hubspot_contact_id=sync_result.contact_id,
+            )
     finally:
         await close_postgres()
         await close_redis()
+
+
+async def _maybe_notify_telegram(
+    *,
+    sender_id: str,
+    agent_result: dict[str, Any],
+    hubspot_status: str,
+    hubspot_contact_id: str | None,
+) -> None:
+    """Decide which event label to send and dispatch the Telegram alert.
+
+    We classify the event so the on-call channel can filter easily:
+
+    - "hubspot_sync_failed"  -> the CRM write failed; needs investigation.
+    - "handoff_requested"    -> a customer asked for a human; sales should jump in.
+    - "hot_lead_captured"    -> a high-urgency pricing lead was captured cleanly.
+    - "new_message"          -> default catch-all for everything else.
+    """
+
+    intent = agent_result["intent"]
+    action = agent_result["action"]
+    metadata = agent_result.get("metadata", {}) or {}
+
+    if hubspot_status == "failed":
+        event_type = "hubspot_sync_failed"
+    elif intent == "handoff":
+        event_type = "handoff_requested"
+    elif intent == "pricing" and hubspot_status == "synced":
+        event_type = "hot_lead_captured"
+    else:
+        event_type = "new_message"
+
+    await send_telegram_notification(
+        event_type=event_type,
+        sender_id=sender_id,
+        intent=intent,
+        action=action,
+        metadata=metadata,
+        hubspot_status=hubspot_status,
+        hubspot_contact_id=hubspot_contact_id,
+    )
