@@ -1,10 +1,3 @@
-x-postgres-connection: &postgres-connection
-  POSTGRES_HOST: postgres
-  POSTGRES_PORT: 5432
-  POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-  POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
-
 services:
   app:
     build: .
@@ -15,94 +8,24 @@ services:
     environment:
       APP_NAME: OmniAgent Flow
       APP_ENV: development
-      WEBHOOK_VERIFY_TOKEN: ${WEBHOOK_VERIFY_TOKEN:-change-me}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SESSION_TTL_SECONDS: 1800
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-omniagent_knowledge}
-      RAG_EMBEDDING_SIZE: ${RAG_EMBEDDING_SIZE:-384}
-      RAG_DENSE_WEIGHT: ${RAG_DENSE_WEIGHT:-0.65}
-      RAG_BM25_WEIGHT: ${RAG_BM25_WEIGHT:-0.35}
-      RAG_CANDIDATE_LIMIT: ${RAG_CANDIDATE_LIMIT:-20}
-      RAG_BM25_CORPUS_LIMIT: ${RAG_BM25_CORPUS_LIMIT:-500}
-      RAG_ENABLE_RERANKER: ${RAG_ENABLE_RERANKER:-false}
-      RAG_RERANKER_MODEL: ${RAG_RERANKER_MODEL:-BAAI/bge-reranker-base}
-      HUBSPOT_SYNC_ENABLED: ${HUBSPOT_SYNC_ENABLED:-false}
-      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:-}
-      HUBSPOT_BASE_URL: ${HUBSPOT_BASE_URL:-https://api.hubapi.com}
-      HUBSPOT_TIMEOUT_SECONDS: ${HUBSPOT_TIMEOUT_SECONDS:-10}
-      TELEGRAM_NOTIFICATIONS_ENABLED: ${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
+      RAG_EMBEDDING_SIZE: ${RAG_EMBEDDING_SIZE:-1536}
+      RAG_TOP_K: ${RAG_TOP_K:-3}
+      RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE:-1000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-      TELEGRAM_TIMEOUT_SECONDS: ${TELEGRAM_TIMEOUT_SECONDS:-10}
-      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
-      SESSION_TTL_SECONDS: 1800
-      <<: *postgres-connection
+      TELEGRAM_WEBHOOK_SECRET_TOKEN: ${TELEGRAM_WEBHOOK_SECRET_TOKEN:-}
     volumes:
       - ./src:/app/src
     depends_on:
       redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-    restart: unless-stopped
-
-  worker:
-    build: .
-    container_name: omniagent-flow-worker
-    command: celery -A src.workers.tasks worker --loglevel=info
-    environment:
-      APP_NAME: OmniAgent Flow
-      APP_ENV: development
-      WEBHOOK_VERIFY_TOKEN: ${WEBHOOK_VERIFY_TOKEN:-change-me}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-omniagent_knowledge}
-      RAG_EMBEDDING_SIZE: ${RAG_EMBEDDING_SIZE:-384}
-      RAG_DENSE_WEIGHT: ${RAG_DENSE_WEIGHT:-0.65}
-      RAG_BM25_WEIGHT: ${RAG_BM25_WEIGHT:-0.35}
-      RAG_CANDIDATE_LIMIT: ${RAG_CANDIDATE_LIMIT:-20}
-      RAG_BM25_CORPUS_LIMIT: ${RAG_BM25_CORPUS_LIMIT:-500}
-      RAG_ENABLE_RERANKER: ${RAG_ENABLE_RERANKER:-false}
-      RAG_RERANKER_MODEL: ${RAG_RERANKER_MODEL:-BAAI/bge-reranker-base}
-      HUBSPOT_SYNC_ENABLED: ${HUBSPOT_SYNC_ENABLED:-false}
-      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:-}
-      HUBSPOT_BASE_URL: ${HUBSPOT_BASE_URL:-https://api.hubapi.com}
-      HUBSPOT_TIMEOUT_SECONDS: ${HUBSPOT_TIMEOUT_SECONDS:-10}
-      TELEGRAM_NOTIFICATIONS_ENABLED: ${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-      TELEGRAM_TIMEOUT_SECONDS: ${TELEGRAM_TIMEOUT_SECONDS:-10}
-      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
-      SESSION_TTL_SECONDS: 1800
-      <<: *postgres-connection
-    volumes:
-      - ./src:/app/src
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
       qdrant:
         condition: service_started
@@ -120,28 +43,6 @@ services:
       retries: 10
     restart: unless-stopped
 
-  postgres:
-    image: postgres:17-alpine
-    container_name: omniagent-flow-postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"',
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
   qdrant:
     image: qdrant/qdrant
     container_name: omniagent-flow-qdrant
@@ -153,5 +54,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   qdrant_data:

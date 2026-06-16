@@ -1,25 +1,57 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import sys
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from redis.asyncio import Redis
 
-from src.api.webhook import router as webhook_router
+from src.api.telegram_webhook import router as telegram_router
 from src.config import get_settings
-from src.database import close_postgres, close_redis, init_redis
-from src.services.conversation_service import init_conversation_schema
+
+
+# ---------------------------------------------------------------------------
+# Module-level resources
+# ---------------------------------------------------------------------------
+#
+# A single Redis client and a single Qdrant client are created at startup
+# and reused for the lifetime of the process. Other modules import the
+# globals below instead of opening new connections on every call.
+
+redis_client: Optional[Redis] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    await init_redis()
-    await init_conversation_schema()
-    yield
-    await close_postgres()
-    await close_redis()
+    global redis_client
 
+    settings = get_settings()
+    redis_client = Redis.from_url(
+        f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}",
+        decode_responses=True,
+    )
+    await redis_client.ping()
+    logger.info(
+        "Connected to Redis",
+        redis_host=settings.redis_host,
+        redis_port=settings.redis_port,
+        redis_db=settings.redis_db,
+    )
+
+    try:
+        yield
+    finally:
+        if redis_client is not None:
+            await redis_client.aclose()
+            redis_client = None
+            logger.info("Redis connection closed")
+
+
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
 
 settings = get_settings()
 
@@ -40,7 +72,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(webhook_router, prefix="/api")
+app.include_router(telegram_router, prefix="/api")
 
 
 @app.get("/health", tags=["health"])

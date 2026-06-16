@@ -1,65 +1,64 @@
-# OmniAgent Flow - Interview Study Guide
+# OmniAgent Flow - Tài liệu ôn tập phỏng vấn
 
-This document is the single source of truth for explaining the
-OmniAgent Flow project in a technical interview. It mirrors the
-project structure and walks through the **why** behind every decision
-so you can answer follow-up questions without flipping through the
-codebase.
+Tài liệu này là nguồn tham chiếu duy nhất để giải thích dự án
+OmniAgent Flow trong buổi phỏng vấn kỹ thuật. File này bám sát cấu
+trúc dự án và đi vào **lý do** đằng sau từng quyết định, để bạn có
+thể trả lời các câu hỏi mở rộng mà không cần lật lại toàn bộ code.
 
-Use the table of contents to jump to the topic the interviewer is
-probing. Each section ends with sample Q&A so you can rehearse.
+Dùng mục lục bên dưới để nhảy nhanh đến chủ đề mà nhà tuyển dụng đang
+hỏi. Mỗi phần kết thúc bằng phần hỏi - đáp mẫu để bạn tự luyện tập.
 
-## Table of contents
+## Mục lục
 
-1. [Project elevator pitch](#1-project-elevator-pitch)
-2. [System architecture](#2-system-architecture)
-3. [Phase 1 - Core backend & async webhook](#3-phase-1---core-backend--async-webhook)
-4. [Phase 2 - Agentic AI & advanced RAG](#4-phase-2---agentic-ai--advanced-rag)
-5. [Phase 3 - CRM & real-time notifications](#5-phase-3---crm--real-time-notifications)
-6. [Phase 4 - Observability, testing, dashboards](#6-phase-4---observability-testing-dashboards)
-7. [Operational playbook](#7-operational-playbook)
-8. [Common interview questions](#8-common-interview-questions)
-
----
-
-## 1. Project elevator pitch
-
-**One-sentence pitch:** A production-shaped multi-channel AI customer
-support agent that ingests webhook events, classifies customer intent
-with a LangGraph state machine, retrieves grounded answers via hybrid
-RAG, syncs qualified leads to HubSpot, alerts humans on Telegram, and
-ships its traces to LangFuse.
-
-**Why this project exists for your CV:**
-- It demonstrates the **full async pipeline** pattern most companies
-  want from a senior backend engineer: webhook -> queue -> worker ->
-  external APIs.
-- It mixes **GenAI engineering** (LangGraph, structured outputs, RAG,
-  evaluation) with **traditional backend** (FastAPI, Celery, Redis,
-  PostgreSQL, Docker).
-- It includes **observability** and **testing**, which most portfolio
-  projects skip but every interview loop asks about.
-
-**Tech stack at a glance:**
-
-| Layer            | Tool                                            |
-| ---------------- | ----------------------------------------------- |
-| HTTP API         | FastAPI (async)                                 |
-| Task queue       | Celery + Redis broker                          |
-| Short-term memory| Redis (list + TTL 1800s)                        |
-| Long-term memory | PostgreSQL (conversations, messages, sync log)  |
-| Agent            | LangGraph state machine                         |
-| LLM              | OpenAI structured outputs                       |
-| Vector DB        | Qdrant (hybrid dense + BM25 + reranker)         |
-| CRM              | HubSpot v3 contacts API                        |
-| Notifications    | Telegram Bot HTTP API                          |
-| Observability    | LangFuse traces + scores                       |
-| Containerisation | Docker + docker-compose                        |
-| Testing          | pytest + pytest-asyncio                         |
+1. [Giới thiệu ngắn về dự án](#1-giới-thiệu-ngắn-về-dự-án)
+2. [Kiến trúc hệ thống](#2-kiến-trúc-hệ-thống)
+3. [Phase 1 - Backend lõi & webhook bất đồng bộ](#3-phase-1---backend-lõi--webhook-bất-đồng-bộ)
+4. [Phase 2 - Agentic AI & Advanced RAG](#4-phase-2---agentic-ai--advanced-rag)
+5. [Phase 3 - CRM & thông báo realtime](#5-phase-3---crm--thông-báo-realtime)
+6. [Phase 4 - Observability, testing, dashboard](#6-phase-4---observability-testing-dashboard)
+7. [Playbook vận hành](#7-playbook-vận-hành)
+8. [Các câu hỏi phỏng vấn thường gặp](#8-các-câu-hỏi-phỏng-vấn-thường-gặp)
 
 ---
 
-## 2. System architecture
+## 1. Giới thiệu ngắn về dự án
+
+**Một câu tóm tắt:** Hệ thống AI Agent chăm sóc khách hàng đa kênh
+theo hình mẫu production, nhận webhook, phân loại intent khách hàng
+bằng state machine LangGraph, truy xuất câu trả lời có cơ sở qua
+hybrid RAG, đồng bộ lead chất lượng sang HubSpot, cảnh báo con người
+trên Telegram, và đẩy trace sang LangFuse.
+
+**Vì sao dự án này có ích cho CV của bạn:**
+- Thể hiện được **pattern pipeline bất đồng bộ hoàn chỉnh** mà hầu
+  hết công ty đều muốn ở một kỹ sư backend senior: webhook -> queue
+  -> worker -> external APIs.
+- Kết hợp được **GenAI engineering** (LangGraph, structured outputs,
+  RAG, evaluation) với **backend truyền thống** (FastAPI, Celery,
+  Redis, PostgreSQL, Docker).
+- Có sẵn **observability** và **testing** - hai phần mà hầu hết dự
+  án portfolio bỏ qua nhưng mọi vòng phỏng vấn đều hỏi.
+
+**Tổng quan tech stack:**
+
+| Tầng                  | Công cụ                                       |
+| --------------------- | --------------------------------------------- |
+| HTTP API              | FastAPI (async)                               |
+| Task queue            | Celery + Redis broker                         |
+| Bộ nhớ ngắn hạn       | Redis (list + TTL 1800s)                      |
+| Bộ nhớ dài hạn        | PostgreSQL (conversations, messages, sync log)|
+| Agent                 | LangGraph state machine                       |
+| LLM                   | OpenAI structured outputs                     |
+| Vector DB             | Qdrant (hybrid dense + BM25 + reranker)       |
+| CRM                   | HubSpot v3 contacts API                      |
+| Thông báo             | Telegram Bot HTTP API                        |
+| Observability         | LangFuse traces + scores                     |
+| Container hóa         | Docker + docker-compose                      |
+| Testing               | pytest + pytest-asyncio                       |
+
+---
+
+## 2. Kiến trúc hệ thống
 
 ```
               Facebook Messenger / Web Channel
@@ -98,21 +97,21 @@ ships its traces to LangFuse.
   +-------------------------+
 ```
 
-### Why an asynchronous pipeline?
+### Vì sao lại cần pipeline bất đồng bộ?
 
-A Facebook webhook expects an HTTP 200 in **under 5 seconds**; if you
-call an LLM synchronously you risk timeouts, retried deliveries, and
-duplicate processing. Pushing the payload into Celery guarantees
-**at-least-once** processing with **fast ack** to the upstream
-channel. We isolate slow work (LLM, vector search, HubSpot) from the
-hot HTTP path. This is the same pattern used by payment webhooks
-(Stripe), messaging (Twilio), and CI/CD systems (GitHub Actions).
+Webhook của Facebook yêu cầu trả về HTTP 200 trong **dưới 5 giây**;
+nếu gọi LLM đồng bộ, bạn sẽ đối mặt với timeout, retry, và xử lý
+trùng lặp. Đẩy payload vào Celery đảm bảo xử lý **ít nhất một lần
+(at-least-once)** với **xác nhận nhanh** cho kênh phía trên. Chúng ta
+cô lập phần việc chậm (LLM, vector search, HubSpot) khỏi đường HTTP
+nóng. Đây chính là pattern mà webhook thanh toán (Stripe), nhắn tin
+(Twilio), và hệ thống CI/CD (GitHub Actions) đều dùng.
 
 ---
 
-## 3. Phase 1 - Core backend & async webhook
+## 3. Phase 1 - Backend lõi & webhook bất đồng bộ
 
-### 3.1 Folder layout
+### 3.1 Cấu trúc thư mục
 
 ```
 src/
@@ -124,25 +123,25 @@ src/
     celery_app.py    - broker / backend config
     tasks.py         - process_incoming_message
   services/
-    session_service.py   - Redis session history
-    conversation_service.py - PostgreSQL persistence
-    ai_service.py       - LangGraph orchestration
-    intent_service.py   - structured output extraction
-    rag_service.py      - hybrid retrieval
-    hubspot_service.py  - CRM sync
-    telegram_service.py - real-time alerts
-    observability_service.py - LangFuse wrapper
-    evaluation_service.py   - faithfulness/relevance scorers
+    session_service.py        - Lịch sử session trên Redis
+    conversation_service.py   - Lưu trữ PostgreSQL
+    ai_service.py             - Điều phối LangGraph
+    intent_service.py         - Trích xuất structured output
+    rag_service.py            - Hybrid retrieval
+    hubspot_service.py        - Đồng bộ CRM
+    telegram_service.py       - Cảnh báo realtime
+    observability_service.py  - Wrapper LangFuse
+    evaluation_service.py     - Chấm điểm faithfulness/relevance
 ```
 
-### 3.2 Webhook verification
+### 3.2 Xác thực webhook
 
-Facebook uses the **hub.mode / hub.verify_token / hub.challenge**
-handshake. The webhook returns the `hub.challenge` only when the
-token matches. We never accept inbound traffic without the handshake
-because anyone could post fake messages otherwise.
+Facebook dùng cơ chế bắt tay **hub.mode / hub.verify_token /
+hub.challenge**. Webhook chỉ trả về `hub.challenge` khi token khớp.
+Chúng ta không bao giờ nhận traffic vào nếu không qua bước bắt tay
+này, vì nếu không bất kỳ ai cũng có thể gửi tin nhắn giả.
 
-### 3.3 Push-to-queue pattern
+### 3.3 Pattern đẩy vào queue
 
 ```python
 @router.post("")
@@ -151,51 +150,52 @@ async def receive_webhook(payload: dict[str, Any] = Body(...)) -> dict[str, str]
     return {"status": "success", "task_id": task.id}
 ```
 
-The handler does **two** things:
-1. Enqueue the raw payload to Celery.
-2. Return `200 OK` with the task id.
+Handler chỉ làm **đúng hai** việc:
+1. Đẩy raw payload vào Celery.
+2. Trả về `200 OK` kèm task id.
 
-This is the strictest possible contract for an external webhook:
-**never** do work synchronously, **never** return error codes for
-recoverable failures. The client just needs the acknowledgement.
+Đây là hợp đồng nghiêm ngặt nhất có thể cho một webhook bên ngoài:
+**không bao giờ** xử lý đồng bộ, **không bao giờ** trả mã lỗi cho
+lỗi có thể phục hồi. Client chỉ cần xác nhận đã nhận.
 
-### 3.4 Redis session history
+### 3.4 Lịch sử session trên Redis
 
-`session_service.py` keeps a sliding window of the last 10 messages
-in a Redis list with a 30-minute TTL. The window size is the
-hyper-parameter that balances context richness against token cost.
+`session_service.py` giữ một cửa sổ trượt 10 tin nhắn gần nhất
+trong một Redis list với TTL 30 phút. Độ rộng cửa sổ là siêu tham
+số cân bằng giữa độ phong phú của ngữ cảnh và chi phí token.
 
-Key points you can defend in an interview:
-- We store JSON strings in a Redis list, not a hash. Lists preserve
-  insertion order and let us `LTRIM` to enforce a cap.
-- We use `RPUSH` + `LTRIM -N -1` to keep only the newest N entries.
-- `EXPIRE` is re-issued on every write so the session lives for 30
-  minutes since the last message, **not** since the first.
+Những điểm có thể bảo vệ trong phỏng vấn:
+- Chúng ta lưu chuỗi JSON trong Redis list, không phải hash. List
+  giữ thứ tự chèn và cho phép `LTRIM` để áp trần.
+- Chúng ta dùng `RPUSH` + `LTRIM -N -1` để chỉ giữ N mục mới nhất.
+- `EXPIRE` được gọi lại ở mỗi lần ghi, nên session sống 30 phút kể
+  từ **tin nhắn cuối**, không phải từ tin nhắn đầu.
 
 ### 3.5 Celery task
 
-The worker uses `asyncio.run` inside the synchronous Celery task.
-This is a pragmatic choice: the task body is small and contains no
-shared event loop, so spinning up a fresh loop per task is cheaper
-than juggling the worker loop manually. For higher throughput, a
-Celery `gevent` pool would let us reuse one loop.
+Worker dùng `asyncio.run` bên trong Celery task đồng bộ. Đây là
+lựa chọn thực dụng: thân task nhỏ và không có event loop chia sẻ,
+nên tạo một loop mới mỗi task rẻ hơn là phải quản lý loop của worker
+thủ công. Nếu cần throughput cao hơn, dùng Celery `gevent` pool để
+tái sử dụng một loop.
 
 ---
 
-## 4. Phase 2 - Agentic AI & advanced RAG
+## 4. Phase 2 - Agentic AI & Advanced RAG
 
-### 4.1 Why LangGraph?
+### 4.1 Vì sao chọn LangGraph?
 
-A bare LLM call cannot reliably do **routing**. LangGraph gives us:
+Một lệnh gọi LLM trần không thể routing đáng tin cậy. LangGraph
+cho chúng ta:
 
-- A typed `AgentState` that is mutated by nodes.
-- A `route_agent_action` function that maps `intent -> response_node`.
-- Conditional edges so the graph literally branches on the
-  classifier's output.
+- Một `AgentState` có kiểu rõ ràng, được mutate bởi các node.
+- Hàm `route_agent_action` ánh xạ `intent -> response_node`.
+- Cạnh có điều kiện để graph **phân nhánh thật sự** theo output
+  của bộ phân loại.
 
-This is the right primitive for any "AI that has to take a different
-path based on the user's situation" workflow. It also makes the
-graph serializable, which is what LangFuse traces render.
+Đây là nguyên thủy đúng cho mọi workflow "AI cần đi theo đường
+khác nhau tuỳ tình huống người dùng". Nó cũng làm cho graph có thể
+serialize - chính là thứ mà trace LangFuse render.
 
 ### 4.2 Structured outputs + Pydantic
 
@@ -211,292 +211,293 @@ class CustomerIntentExtraction(BaseModel):
     ...
 ```
 
-We pass `text_format=CustomerIntentExtraction` to OpenAI. The model
-returns JSON that Pydantic validates; we get a typed object back. No
-string parsing, no regex on LLM output, no retry loops. We also keep
-a deterministic fallback extractor (`_build_fallback_extraction`)
-that runs on keyword heuristics when the OpenAI key is missing, so
-the system stays demo-able offline.
+Chúng ta truyền `text_format=CustomerIntentExtraction` cho OpenAI.
+Model trả về JSON, Pydantic validate, chúng ta nhận lại một object
+đã có kiểu. Không cần parse chuỗi, không cần regex trên output LLM,
+không cần vòng retry. Chúng ta cũng giữ một bộ trích xuất dự phòng
+tất định (`_build_fallback_extraction`) chạy bằng heuristic từ
+khoá khi thiếu OpenAI key, để hệ thống vẫn demo được offline.
 
-### 4.3 RAG pipeline
+### 4.3 Pipeline RAG
 
-`rag_service.py` implements **hybrid search** end-to-end:
+`rag_service.py` hiện thực **hybrid search** end-to-end:
 
-1. **Dense retrieval**: hash-based embeddings (deterministic for the
-   demo) + cosine similarity in Qdrant. The query embeds, the top-K
-   candidates are returned.
-2. **BM25 sparse retrieval**: a Python implementation of the BM25
-   ranking function over a scrolled corpus. Weights can be tuned via
-   `RAG_DENSE_WEIGHT` and `RAG_BM25_WEIGHT`.
-3. **Hybrid fusion**: weighted sum of normalised dense and BM25
-   scores. `RAG_CANDIDATE_LIMIT` controls the candidate pool size.
-4. **Reranking**: optional cross-encoder via `fastembed`
-   (`BAAI/bge-reranker-base`). When `RAG_ENABLE_RERANKER=true` the
-   top-K candidates are re-scored by a stronger model to reduce
-   hallucination.
+1. **Dense retrieval**: embedding dựa trên hash (tất định cho
+   bản demo) + cosine similarity trong Qdrant. Câu truy vấn được
+   embed, top-K candidate được trả về.
+2. **BM25 sparse retrieval**: hiện thực BM25 bằng Python trên một
+   corpus đã cuộn. Trọng số tinh chỉnh qua `RAG_DENSE_WEIGHT` và
+   `RAG_BM25_WEIGHT`.
+3. **Hybrid fusion**: tổng có trọng số của điểm dense và BM25 đã
+   chuẩn hoá. `RAG_CANDIDATE_LIMIT` kiểm soát kích thước tập ứng
+   viên.
+4. **Reranking**: cross-encoder tuỳ chọn qua `fastembed`
+   (`BAAI/bge-reranker-base`). Khi `RAG_ENABLE_RERANKER=true`,
+   top-K candidate được chấm lại bằng một model mạnh hơn để giảm
+   ảo giác.
 
-Why both? Dense retrieval is great at semantic matches
-("how do I unsubscribe?" ~ "cancel my plan") but bad at exact keyword
-matches (product SKUs, error codes). BM25 is the opposite. Hybrid
-+ reranker is the production-grade answer that every serious
-RAG system converges on.
+Vì sao phải dùng cả hai? Dense retrieval giỏi về match ngữ nghĩa
+("làm sao để huỷ?" ~ "cancel plan") nhưng kém về match từ khoá
+chính xác (mã SKU, mã lỗi). BM25 thì ngược lại. Hybrid + reranker
+là câu trả lời cấp production mà mọi hệ thống RAG nghiêm túc đều
+hội tụ về.
 
-### 4.4 Putting RAG into the graph
+### 4.4 Gắn RAG vào graph
 
-We call `hybrid_search_knowledge(user_message, limit=3)` **before**
-invoking the agent and inject the context as a synthetic
-`role: system` message. The LangGraph nodes stay pure: they only see
-the state and respond. This separation lets us test the graph
-without RAG and unit-test the retriever in isolation.
-
----
-
-## 5. Phase 3 - CRM & real-time notifications
-
-### 5.1 HubSpot sync
-
-`sync_hubspot_lead` follows the standard "search then upsert" pattern:
-
-1. Build a strongly-typed `HubSpotLeadPayload` from the metadata
-   extracted by the LangGraph.
-2. POST to `/crm/v3/objects/contacts/search` filtering by email,
-   then by phone.
-3. If a contact exists -> PATCH the properties. If not -> POST to
-   create. The `action` returned is "created" or "updated".
-4. Always log a `hubspot_lead_syncs` row to PostgreSQL so we can audit
-   every sync attempt, including the failures.
-
-Defensive choices:
-- We use an `httpx.AsyncClient` and a `HubSpotHTTPClient` Protocol
-  so unit tests can inject a fake client.
-- We close the client in a `finally` block to avoid connection
-  leaks.
-- The service is **fail-soft**: any error returns a structured
-  `HubSpotLeadSyncResult` so the worker can still finish the rest of
-  the pipeline and the alert is sent.
-
-### 5.2 Telegram real-time alerts
-
-`send_telegram_notification` is the simplest piece of the system. It
-sends an HTML-formatted message to a configured chat via the
-`sendMessage` Bot API. The four event types are:
-
-- `hubspot_sync_failed` -> CRM write failed; needs investigation.
-- `handoff_requested`   -> customer asked for a human.
-- `hot_lead_captured`   -> pricing intent + CRM synced.
-- `new_message`         -> catch-all.
-
-We pick the event type from `(intent, hubspot_status)` so the on-call
-channel can filter easily. We escape every user-controlled field with
-`html.escape` because Telegram interprets HTML.
-
-Why not Slack? Slack is heavy (OAuth, scopes, signing secrets).
-Telegram Bot API is one HTTP call - perfect for a demo and for any
-small team that just wants push notifications.
+Chúng ta gọi `hybrid_search_knowledge(user_message, limit=3)`
+**trước khi** kích hoạt agent, rồi inject ngữ cảnh như một tin
+nhắn `role: system` giả lập. Các node LangGraph giữ thuần khiết:
+chúng chỉ thấy state và phản hồi. Sự tách bạch này cho phép test
+graph mà không cần RAG, và test riêng bộ truy xuất.
 
 ---
 
-## 6. Phase 4 - Observability, testing, dashboards
+## 5. Phase 3 - CRM & thông báo realtime
+
+### 5.1 Đồng bộ HubSpot
+
+`sync_hubspot_lead` đi theo pattern "search rồi upsert" chuẩn:
+
+1. Xây `HubSpotLeadPayload` có kiểu chặt chẽ từ metadata do
+   LangGraph trích xuất.
+2. POST tới `/crm/v3/objects/contacts/search` lọc theo email,
+   sau đó theo phone.
+3. Nếu contact đã tồn tại -> PATCH properties. Nếu chưa -> POST
+   để tạo. `action` trả về là "created" hoặc "updated".
+4. Luôn ghi một dòng `hubspot_lead_syncs` vào PostgreSQL để audit
+   mọi lần sync, kể cả khi thất bại.
+
+Các lựa chọn phòng thủ:
+- Dùng `httpx.AsyncClient` và `HubSpotHTTPClient` Protocol để
+  unit test có thể inject client giả.
+- Đóng client trong khối `finally` để tránh rò rỉ kết nối.
+- Service là **fail-soft**: mọi lỗi trả về
+  `HubSpotLeadSyncResult` có cấu trúc, để worker vẫn chạy nốt
+  phần còn lại của pipeline và cảnh báo vẫn được gửi.
+
+### 5.2 Cảnh báo realtime qua Telegram
+
+`send_telegram_notification` là mảnh đơn giản nhất của hệ thống.
+Nó gửi một tin nhắn HTML vào chat đã cấu hình qua `sendMessage`
+Bot API. Có bốn loại sự kiện:
+
+- `hubspot_sync_failed` -> Ghi CRM thất bại; cần điều tra.
+- `handoff_requested`    -> Khách hàng yêu cầu gặp người.
+- `hot_lead_captured`    -> Intent báo giá + CRM đã sync.
+- `new_message`          -> Mặc định cho phần còn lại.
+
+Chúng ta chọn event type từ `(intent, hubspot_status)` để kênh
+on-call dễ lọc. Mọi trường do người dùng kiểm soát đều được escape
+bằng `html.escape` vì Telegram diễn giải HTML.
+
+Vì sao không phải Slack? Slack nặng nề (OAuth, scopes, signing
+secrets). Telegram Bot API chỉ là một HTTP call - hoàn hảo cho
+bản demo và cho bất kỳ team nhỏ nào chỉ cần push notification.
+
+---
+
+## 6. Phase 4 - Observability, testing, dashboard
 
 ### 6.1 LangFuse observability
 
-`observability_service.py` wraps the LangFuse SDK behind a tiny
-abstraction. The module exports:
+`observability_service.py` bọc LangFuse SDK sau một lớp trừu
+tượng mỏng. Module export:
 
-- `is_observability_enabled()` - quick check.
-- `atrace_agent_run` - async context manager that opens a trace.
-- `record_intent_generation` - records a generation span with model,
+- `is_observability_enabled()` - kiểm tra nhanh.
+- `atrace_agent_run` - async context manager mở trace.
+- `record_intent_generation` - ghi generation span với model,
   usage, latency.
-- `record_evaluation_score` - attaches a numeric score (0-1) to the
-  trace.
+- `record_evaluation_score` - gắn điểm số (0-1) vào trace.
 
-The module ships a **null client** so tests and offline development
-work even without a LangFuse account. Switching it on is a one-env-
-variable change: `LANGFUSE_ENABLED=true`.
+Module tích hợp sẵn **null client** để test và dev offline vẫn
+chạy được khi không có tài khoản LangFuse. Bật lên chỉ tốn một
+biến env: `LANGFUSE_ENABLED=true`.
 
-### 6.2 LLM evaluation
+### 6.2 Đánh giá LLM
 
-`evaluation_service.py` ships two scorers that the LangFuse
-dashboard consumes:
+`evaluation_service.py` cung cấp hai scorer mà dashboard LangFuse
+sẽ tiêu thụ:
 
-- **Faithfulness**: how much of the answer is grounded in the
-  retrieved context? We compute it as token overlap with the
-  retrieved docs. With an OpenAI key, we instead call the model and
-  ask for a 0-1 score with a rubric.
-- **Answer relevance**: is the answer actually about the question?
-  We blend token overlap with the user question and a keyword bonus
-  for known intent terms.
+- **Faithfulness**: câu trả lời bám vào context được truy xuất tới
+  mức nào? Tính bằng token overlap với tài liệu được truy xuất.
+  Khi có OpenAI key, gọi model và xin điểm 0-1 kèm rubric.
+- **Answer relevance**: câu trả lời có thật sự đúng câu hỏi không?
+  Pha trộn token overlap với câu hỏi người dùng và thưởng từ khoá
+  cho các cụm từ intent đã biết.
 
-Both fall back to deterministic heuristics when the LLM is
-unavailable. The result is folded into the agent's metadata, written
-to PostgreSQL, and pushed to LangFuse as a score.
+Cả hai đều fallback về heuristic tất định khi LLM không khả dụng.
+Kết quả được gấp vào metadata của agent, ghi vào PostgreSQL, và
+đẩy sang LangFuse thành score.
 
 ### 6.3 Testing
 
-The test suite lives in `tests/` and runs with pytest. We split it
-by service so failures are easy to localise:
+Bộ test nằm trong `tests/` và chạy bằng pytest. Chúng ta tách
+theo từng service để dễ khoanh vùng lỗi:
 
-- `test_webhook.py`         - HTTP contract, GET/POST, 403 on bad
-                              token, Celery enqueue.
-- `test_session_service.py` - Redis-backed list operations.
-- `test_rag_service.py`     - hybrid search, BM25, reranker toggle.
-- `test_intent_service.py`  - structured output + fallback.
-- `test_agent.py`           - LangGraph routing.
-- `test_hubspot_service.py` - upsert flow with a fake client.
-- `test_telegram_service.py`- HTML escaping, send/skip/fail.
-- `test_conversation_service.py` - schema + helpers.
-- `test_observability_service.py` - null client behaviour.
-- `test_evaluation_service.py`    - fallback scorers.
-- `test_tasks.py`           - Celery task pipeline.
-- `test_app_factory.py`     - lifespan + healthcheck.
+- `test_webhook.py`              - Hợp đồng HTTP, GET/POST, 403 khi
+                                   token sai, enqueue Celery.
+- `test_session_service.py`      - Thao tác list trên Redis.
+- `test_rag_service.py`          - Hybrid search, BM25, bật/tắt
+                                   reranker.
+- `test_intent_service.py`       - Structured output + fallback.
+- `test_agent.py`                - Routing LangGraph.
+- `test_hubspot_service.py`      - Luồng upsert với client giả.
+- `test_telegram_service.py`     - Escape HTML, send/skip/fail.
+- `test_conversation_service.py` - Schema + helpers.
+- `test_observability_service.py` - Hành vi null client.
+- `test_evaluation_service.py`   - Fallback scorers.
+- `test_tasks.py`                - Pipeline Celery task.
+- `test_app_factory.py`          - Lifespan + healthcheck.
 
-Run with `python -m pytest tests/ -v`. The current run is 45 tests,
-all green, in under 2 seconds.
+Chạy bằng `python -m pytest tests/ -v`. Hiện tại chạy 45 test, tất
+cả xanh, dưới 2 giây.
 
-### 6.4 Looker Studio dashboards
+### 6.4 Dashboard Looker Studio
 
-We do **not** stream the events into a warehouse. The dashboards
-read directly from PostgreSQL via SQL views. The views live in
+Chúng ta **không** stream sự kiện vào warehouse. Dashboard đọc
+thẳng từ PostgreSQL qua các SQL view. Các view nằm trong
 `migrations/0010_looker_views.sql`:
 
-- `vw_daily_intent_volume`      - stacked bar of intents per day.
-- `vw_intent_summary`           - KPIs (pricing, handoff, fallback).
-- `vw_hubspot_sync_outcomes`    - CRM sync health.
-- `vw_conversation_insights`    - lead leaderboard (channels, pain
-                                  points flattened from JSONB).
-- `vw_conversation_volume_hourly` - hour-of-day heatmap.
+- `vw_daily_intent_volume`       - Stacked bar intent theo ngày.
+- `vw_intent_summary`            - KPI (pricing, handoff, fallback).
+- `vw_hubspot_sync_outcomes`     - Sức khoẻ sync CRM.
+- `vw_conversation_insights`     - Bảng xếp hạng lead (channels,
+                                   pain points được trải phẳng từ
+                                   JSONB).
+- `vw_conversation_volume_hourly`- Heatmap theo giờ trong ngày.
 
-The Looker Studio report guide is in `docs/looker_studio.md`. The
-contract between the BI tool and the database is the set of views;
-we can change the underlying tables without breaking the dashboard.
+Hướng dẫn report Looker Studio nằm trong
+`docs/looker_studio.md`. Hợp đồng giữa BI tool và database chính
+là tập view này; ta có thể đổi bảng bên dưới mà không phá
+dashboard.
 
 ---
 
-## 7. Operational playbook
+## 7. Playbook vận hành
 
-### Local development
+### Phát triển local
 
 ```bash
-# Start infra + app
+# Khởi động infra + app
 docker compose up --build
 
-# Run the worker (separate terminal)
+# Chạy worker (terminal riêng)
 celery -A src.workers.tasks worker --loglevel=info
 ```
 
-### Smoke tests
+### Smoke test
 
 ```bash
-# Webhook verification
+# Xác thực webhook
 python test_webhook.py
 
-# Session flow
+# Luồng session
 python test_session.py
 
-# Full pipeline (webhook -> queue -> agent -> DB)
+# Pipeline đầy đủ (webhook -> queue -> agent -> DB)
 python test_queue.py
 
-# RAG / agent / conversation / HubSpot unit tests
+# Unit test RAG / agent / conversation / HubSpot
 python -m pytest tests/ -v
 ```
 
-### Production deployment notes
+### Ghi chú triển khai production
 
-- `WEBHOOK_VERIFY_TOKEN` must be rotated and stored in a secret
-  manager. The token is the **only** thing standing between an
-  attacker and your Celery queue.
-- The Postgres credentials should come from a managed secret store
-  (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault). The
-  `docker-compose.yml` already fails fast if any of them is empty.
-- `LANGFUSE_*` keys are optional. Without them the system still
-  works - it just stops sending traces.
-- `HUBSPOT_SYNC_ENABLED=true` plus a private app token is required
-  for live CRM writes.
-- `TELEGRAM_NOTIFICATIONS_ENABLED=true` requires a bot token and
-  the chat id of the target group (negative number for groups).
+- `WEBHOOK_VERIFY_TOKEN` phải được rotate và lưu trong secret
+  manager. Token này là **thứ duy nhất** ngăn cản kẻ tấn công
+  truy cập Celery queue của bạn.
+- Thông tin đăng nhập Postgres nên đến từ một secret store được
+  quản lý (AWS Secrets Manager, GCP Secret Manager, HashiCorp
+  Vault). `docker-compose.yml` đã fail-fast nếu bất kỳ biến nào
+  bị rỗng.
+- Key `LANGFUSE_*` là tuỳ chọn. Không có chúng hệ thống vẫn chạy
+  - chỉ là dừng gửi trace.
+- `HUBSPOT_SYNC_ENABLED=true` kèm private app token là bắt buộc
+  cho ghi CRM thật.
+- `TELEGRAM_NOTIFICATIONS_ENABLED=true` yêu cầu bot token và
+  chat id của nhóm đích (số âm cho group).
 
 ---
 
-## 8. Common interview questions
+## 8. Các câu hỏi phỏng vấn thường gặp
 
-### Q1. Why is the webhook async?
+### Câu 1. Vì sao webhook lại bất đồng bộ?
 
-> Facebook expects an HTTP 200 in <5s. LLM calls + RAG + HubSpot
-> writes can take seconds. If we answered synchronously we'd risk
-> timeouts and duplicate processing. We push to Celery and ack in
-> <500ms. The worker handles slow work, retries, and failures.
+> Facebook kỳ vọng HTTP 200 trong <5s. LLM + RAG + ghi HubSpot
+> có thể tốn vài giây. Nếu trả lời đồng bộ, ta đối mặt với
+> timeout và xử lý trùng lặp. Chúng ta đẩy vào Celery và xác
+> nhận trong <500ms. Worker lo phần việc chậm, retry, và xử lý
+> lỗi.
 
-### Q2. Why Redis for sessions and Postgres for messages?
+### Câu 2. Vì sao Redis cho session mà Postgres cho message?
 
-> Sessions are bounded, short-lived, and need O(1) reads/writes
-> with TTL. Redis is built for that. Conversation history must
-> survive container restarts and be queryable by date/intent for
-> analytics. That's a relational use case, hence Postgres with
-> JSONB for metadata flexibility.
+> Session có giới hạn, ngắn hạn, và cần đọc/ghi O(1) với TTL.
+> Redis sinh ra để làm việc đó. Lịch sử hội thoại phải sống
+> sót qua restart container và truy vấn được theo ngày/intent để
+> phân tích. Đó là use case quan hệ, nên dùng Postgres với
+> JSONB cho linh hoạt về metadata.
 
-### Q3. How do you prevent the LLM from hallucinating?
+### Câu 3. Làm sao ngăn LLM ảo giác?
 
-> Three layers:
-> 1. **Structured outputs** force the LLM to answer against a
->    Pydantic schema. It cannot invent free-form fields.
-> 2. **Hybrid RAG + reranker** grounds the response in the
->    knowledge base. We inject the retrieved docs as a system
->    message before the agent runs.
-> 3. **Faithfulness evaluation** scores every turn and ships the
->    score to LangFuse so we can spot regressions in the dashboard.
+> Ba lớp:
+> 1. **Structured outputs** ép LLM trả lời theo schema Pydantic.
+>    Nó không thể bịa ra trường tự do.
+> 2. **Hybrid RAG + reranker** grounding câu trả lời trong
+>    knowledge base. Chúng ta inject tài liệu truy xuất như
+>    system message trước khi agent chạy.
+> 3. **Đánh giá Faithfulness** chấm điểm từng lượt và đẩy sang
+>    LangFuse để phát hiện regression trên dashboard.
 
-### Q4. Why LangGraph instead of a single prompt?
+### Câu 4. Vì sao LangGraph thay vì một prompt duy nhất?
 
-> A single prompt cannot reliably route. LangGraph lets us declare
-> an explicit `AgentState`, a `classify_intent` node, and four
-> response branches. The graph is testable, traceable, and
-> composable. It is the right primitive for any branching
-> AI workflow (routing, escalation, handoff).
+> Một prompt không thể routing đáng tin cậy. LangGraph cho phép
+> khai báo `AgentState` rõ ràng, một node `classify_intent`, và
+> bốn nhánh phản hồi. Graph test được, trace được, và compose
+> được. Đây là nguyên thủy đúng cho mọi workflow AI phân nhánh
+> (routing, escalation, handoff).
 
-### Q5. How do you test an LLM-powered system without flake?
+### Câu 5. Làm sao test hệ thống có LLM mà không bị flake?
 
-> We test **what we own**, not the LLM. The agent's routing is
-> tested with the structured-output extractor disabled and a
-> deterministic fallback classifier. The RAG service is tested
-> with deterministic hash embeddings. The HubSpot and Telegram
-> services use protocol-based fake clients. Only the OpenAI call
-> itself is left as a network dependency, and that one is behind
-> a `try/except` that falls back to the deterministic path.
+> Chúng ta test **thứ mình sở hữu**, không test LLM. Routing
+> của agent được test bằng cách tắt structured-output extractor
+> và dùng fallback classifier tất định. RAG service test với
+> hash embedding tất định. HubSpot và Telegram dùng fake client
+> dựa trên Protocol. Chỉ duy nhất lệnh gọi OpenAI còn lại là
+> phụ thuộc mạng, và lệnh đó nằm sau `try/except` có fallback
+> về đường tất định.
 
-### Q6. What would you change for production?
+### Câu 6. Sẽ thay đổi gì cho production?
 
-> - Replace hash embeddings with a real model (text-embedding-3-
->   small or BGE) and store vectors in Qdrant with HNSW.
-> - Use Celery's `gevent` worker pool for higher concurrency.
-> - Add a retry policy with exponential backoff for HubSpot and
+> - Thay hash embedding bằng model thật (text-embedding-3-small
+>   hoặc BGE) và lưu vector trong Qdrant với HNSW.
+> - Dùng Celery `gevent` worker pool để tăng concurrency.
+> - Thêm retry policy với exponential backoff cho HubSpot và
 >   OpenAI.
-> - Move the SQL views into a read replica with a dedicated
->   analytics user.
-> - Replace the null LangFuse client with a queue-based exporter
->   so traces survive worker restarts.
+> - Chuyển SQL view sang read replica với user phân tích riêng.
+> - Thay null LangFuse client bằng exporter dạng queue để trace
+>   sống sót qua restart worker.
 
-### Q7. How does the system stay fail-soft?
+### Câu 7. Hệ thống giữ được tính fail-soft như thế nào?
 
-> Every external call (HubSpot, Telegram, OpenAI, LangFuse) is
-> wrapped in a `try/except`. The pipeline never crashes because
-> Telegram is down or HubSpot is rate-limiting. Failures are
-> logged via `loguru` and persisted in PostgreSQL so we can
-> reconcile them later.
+> Mọi cuộc gọi bên ngoài (HubSpot, Telegram, OpenAI, LangFuse)
+> đều được bọc trong `try/except`. Pipeline không bao giờ sập
+> vì Telegram chết hay HubSpot rate-limit. Lỗi được log qua
+> `loguru` và lưu vào PostgreSQL để sau này đối chiếu lại.
 
-### Q8. Walk me through a real message.
+### Câu 8. Đi qua một message thật giúp tôi.
 
-> 1. Customer sends "Tôi muốn xin báo giá" on Messenger.
-> 2. Facebook POSTs to `/api/webhook`. FastAPI parses it, pushes
->    the payload onto Celery, returns 200 OK with the task id.
-> 3. The worker pulls the task, loads the session from Redis
->    (last 10 messages), and pulls the top-3 RAG docs.
-> 4. `ai_service.generate_agent_result` opens a LangFuse trace,
->    invokes the LangGraph state machine, classifies the intent
->    as `pricing`, and runs the `pricing_response` node.
-> 5. The response is saved to Redis (with TTL refresh) and
->    PostgreSQL with the structured metadata.
-> 6. The HubSpot service creates a contact with `lifecyclestage =
->    lead`. The Telegram service fires a `hot_lead_captured`
->    alert to the sales channel.
-> 7. The LangFuse trace receives the faithfulness and relevance
->    scores, then the trace is flushed.
+> 1. Khách gửi "Tôi muốn xin báo giá" trên Messenger.
+> 2. Facebook POST tới `/api/webhook`. FastAPI parse, đẩy
+>    payload vào Celery, trả về 200 OK kèm task id.
+> 3. Worker kéo task, nạp session từ Redis (10 tin nhắn gần
+>    nhất), và lấy top-3 tài liệu RAG.
+> 4. `ai_service.generate_agent_result` mở trace LangFuse, kích
+>    hoạt state machine LangGraph, phân loại intent là
+>    `pricing`, và chạy node `pricing_response`.
+> 5. Phản hồi được lưu vào Redis (refresh TTL) và PostgreSQL
+>    kèm metadata có cấu trúc.
+> 6. HubSpot service tạo contact với `lifecyclestage = lead`.
+>    Telegram service bắn cảnh báo `hot_lead_captured` vào
+>    kênh sales.
+> 7. Trace LangFuse nhận điểm faithfulness và relevance, sau
+>    đó trace được flush.

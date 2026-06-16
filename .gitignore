@@ -30,3 +30,6 @@ logs/
 qdrant_storage/
 chroma/
 
+# Personal study notes (not part of the project)
+EXPLAINATION.md
+
