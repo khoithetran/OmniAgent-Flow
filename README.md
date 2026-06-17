@@ -1,76 +1,116 @@
 # OmniAgent Flow
 
-He thong AI Agent da kenh va tu dong hoa cham soc khach hang doanh nghiep.
-Kien truc bat dong bo tiep nhan webhook, dua tin nhan vao Celery queue, quan ly
-session bang Redis, su dung LangGraph cho bo phan loai intent, hybrid RAG
-(Qdrant + BM25 + reranker) de tra loi, dong bo lead sang HubSpot, day canh bao
-realtime qua Telegram Bot, va gui trace/evaluation len LangFuse.
+Telegram chatbot RAG cho phép crawl bất kỳ website công ty nào và trả
+lời câu hỏi dựa trên nội dung website đó.
+
+## Kiến trúc đơn giản
+
+```
+Telegram ──► FastAPI webhook
+                   │
+            ┌──────┴──────┐
+            ▼             ▼
+         Redis         Qdrant
+      (session +        (RAG
+       pending)          KB)
+            ▲
+            │
+         OpenAI
+   (embedding + LLM)
+```
 
 ## Tech Stack
 
-- Python 3.10+
-- FastAPI
-- Celery + Redis
-- PostgreSQL
-- Docker Compose
-- LangGraph (state machine)
-- OpenAI Structured Outputs
-- Qdrant (hybrid search + BM25 + reranker)
-- HubSpot CRM API
-- Telegram Bot API
-- LangFuse (traces + evaluation)
-- pytest + pytest-asyncio
+| Tầng          | Công cụ                        |
+|--------------|-------------------------------|
+| HTTP API      | FastAPI (async)                |
+| Session/Cache | Redis (list + TTL)             |
+| Vector DB     | Qdrant (`text-embedding-3-small`) |
+| LLM + Embedding | OpenAI GPT-4o-mini / text-embedding-3-small |
+| Crawler       | crawl4ai (Chromium headless)   |
+| Container     | Docker + Docker Compose        |
+| Testing       | pytest + pytest-asyncio (96 tests) |
+
+## Cách hoạt động
+
+1. **User nhắn URL công ty** → bot crawl toàn bộ site qua sitemap, chunk, embed, index vào Qdrant.
+2. **User hỏi về công ty đó** → RAG tìm top-3 chunks, GPT-4o-mini trả lời tiếng Việt có citation.
+3. **User hỏi câu đã hỏi** → cache Redis trả ngay, không gọi LLM.
+4. **RAG không tìm thấy** → bot xin email, lưu Redis 30 ngày.
+5. **Không có URL** → entity detection (OpenAI tool calling) hỏi user gửi URL.
 
 ## Quick Start
 
-1. Tao file moi truong:
-
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-2. Cap nhat cac gia tri nhay cam trong `.env`:
-
-   - Dat `WEBHOOK_VERIFY_TOKEN` thanh token rieng.
-   - Dat `POSTGRES_USER` va `POSTGRES_DB` theo moi truong.
-   - Tao `POSTGRES_PASSWORD` dai, ngau nhien bang password manager hoac secret
-     manager. Khong commit file `.env`.
-   - (Tuy chon) Dien `OPENAI_API_KEY`, `HUBSPOT_ACCESS_TOKEN`,
-     `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`, va `LANGFUSE_*` de bat
-     tung tinh nang.
-
-3. Khoi dong he thong:
-
-   ```powershell
-   docker compose up --build
-   ```
-
-FastAPI se chay tai `http://localhost:8000`.
-
-Docker Compose se dung ngay neu thieu mot trong cac bien `POSTGRES_USER`,
-`POSTGRES_PASSWORD` hoac `POSTGRES_DB`. Trong production, cac gia tri nay can
-duoc cap tu secret manager cua nen tang trien khai.
-
-## Development
-
 ```powershell
+# 1. Copy env
+Copy-Item .env.example .env
+
+# 2. Fill in .env:
+#    OPENAI_API_KEY=sk-...
+#    TELEGRAM_BOT_TOKEN=... (from @BotFather)
+#    REDIS_HOST=localhost
+#    QDRANT_HOST=localhost
+
+# 3. Start infra
+docker compose up -d redis qdrant
+
+# 4. Run app
 uvicorn src.main:app --reload
-celery -A src.workers.tasks worker --loglevel=info
-```
 
-## Testing
+# 5. (optional) Crawl a website and index it
+python crawl_websites.py https://example.com --max-pages 10 --replace
 
-```powershell
+# 6. Run tests
 python -m pytest tests/ -v
 ```
 
-Bo test gom 45 test (webhook contract, session, RAG, agent, intent,
-HubSpot, Telegram, conversation, observability, evaluation, Celery
-task pipeline, app lifespan).
+## API Endpoints
+
+| Method | Path              | Mô tả                            |
+|--------|-------------------|----------------------------------|
+| GET    | `/`               | Healthcheck                      |
+| GET    | `/api/telegram/webhook` | Telegram webhook verify    |
+| POST   | `/api/telegram/webhook` | Nhận tin nhắn Telegram      |
+| POST   | `/api/crawl`     | Crawl + index website (admin)     |
+| DELETE | `/api/crawl`      | Xoá toàn bộ knowledge base       |
+| GET    | `/api/crawl/status` | KB stats (pages, chunks)      |
+
+## Environment Variables
+
+| Variable               | Mặc định       | Mô tả                   |
+|-----------------------|----------------|-------------------------|
+| `OPENAI_API_KEY`       | —              | Bắt buộc                |
+| `TELEGRAM_BOT_TOKEN`   | —              | Từ @BotFather          |
+| `REDIS_HOST`           | `localhost`    |                         |
+| `QDRANT_HOST`          | `localhost`    |                         |
+| `SESSION_TTL_SECONDS`  | `1800`        | 30 phút, sliding window |
+| `CACHE_TTL_SECONDS`    | `3600`        | 1 giờ, same-question cache |
+| `RAG_TOP_K`            | `3`           | Số chunks trả về        |
+
+## Project Structure
+
+```
+src/
+  main.py              - FastAPI app + lifespan (Redis, Qdrant, OpenAI)
+  config.py            - Pydantic settings (.env driven)
+  session.py           - Redis: chat history, pending markers, LLM cache
+  crawler.py           - crawl4ai: sitemap discovery, crawl, chunk
+  rag.py               - Qdrant: index, search, format_context
+  chat.py              - Chat orchestration: RAG + LLM + cache + session
+  entity.py             - URL extraction, email, company detection (OpenAI)
+  api/
+    telegram_webhook.py - Webhook handler + entity detection + Telegram reply
+
+crawl_websites.py      - One-shot crawl+index script
+tests/
+  conftest.py          - Fixtures: mock_redis, mock_settings, cache clear
+  test_session.py      - 20 tests: cache, pending, email, history
+  test_crawler.py       - 25 tests: chunking, sitemap, filtering
+  test_rag.py           - 15 tests: split, upsert, ensure, format
+  test_chat.py          - 36 tests: helpers, chat(), chat_stream()
+```
 
 ## Documentation
 
-- [PLAN.md](PLAN.md) - Lo trinh trien khai chi tiet theo phase.
-- [EXPLAINATION.md](EXPLAINATION.md) - Tai lieu on tap phong van.
-- [docs/looker_studio.md](docs/looker_studio.md) - Huong dan ket noi
-  Looker Studio voi cac SQL view trong `migrations/0010_looker_views.sql`.
+- [PLAN.md](PLAN.md) - Lộ trình triển khai chi tiết theo phase.
+- [EXPLAINATION.md](EXPLAINATION.md) - Tài liệu ôn tập phỏng vấn.
