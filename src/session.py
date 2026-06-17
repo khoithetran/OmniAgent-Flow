@@ -453,3 +453,6 @@ async def cache_set(user_message: str, reply_text: str) -> None:
     except RedisError:
         # Cache write failures are non-fatal — the user still got a reply.
         logger.exception("Failed to write response cache to Redis")
+    except Exception:  # noqa: BLE001
+        # Catch-all for any unexpected error so cache misses never crash the bot.
+        logger.exception("Unexpected error writing response cache")

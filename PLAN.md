@@ -44,6 +44,6 @@ Mục tiêu: Telegram chatbot RAG cho phép crawl bất kỳ website công ty n�
 
 ## Phase 5: Test + Demo [ ]
 
-- [ ] Task 5.1: Viết pytest cho `crawler.py`, `rag.py`, `chat.py`, `session.py`. Mock OpenAI + crawl4ai trong test.
+- [x] Task 5.1: Viết pytest cho `crawler.py`, `rag.py`, `chat.py`, `session.py`. Mock OpenAI + crawl4ai trong test.
 - [ ] Task 5.2: Crawl 2-3 website thật (agency/marketing SaaS). Viết script `crawl_websites.py` chạy 1 lần để setup.
 - [ ] Task 5.3: Cập nhật `README.md` + `EXPLAINATION.md` mô tả kiến trúc mới.
