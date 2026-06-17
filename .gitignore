@@ -33,3 +33,8 @@ chroma/
 # Personal study notes (not part of the project)
 EXPLAINATION.md
 
+# Error tracking and runtime logs
+ERRORS.md
+app.log
+app_err.log
+
