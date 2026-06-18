@@ -215,7 +215,7 @@ async def handle_fetch(
         logger.exception("Index failed", url=url)
         return (
             state,
-            "❌ Index thất bại. Kiểm tra Qdrant.",
+            "❌ Index thất bại. Không thể lưu tài liệu vào vector store.",
             url,
             [],
         )

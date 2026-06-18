@@ -11,6 +11,10 @@ client. It exposes three high-level operations:
 3. ``search()`` - embed a query and retrieve the top-k most relevant
    chunks. Used by the chat flow to ground the LLM.
 
+When Qdrant is unavailable (e.g. HF Spaces), the module falls back to
+an in-memory vector store using cosine similarity over cached embeddings.
+The fallback store persists for the lifetime of the process only.
+
 Design notes
 ------------
 - The Qdrant client is module-level. ``src.main`` owns it via the
@@ -51,6 +55,48 @@ from src.simple_crawler import CrawlResult, chunk_markdown
 qdrant_client: QdrantClient | None = None
 openai_client: AsyncOpenAI | None = None
 qdrant_available: bool = False
+
+
+# ---------------------------------------------------------------------------
+# In-memory fallback vector store (used when Qdrant is unavailable)
+# ---------------------------------------------------------------------------
+
+_IN_MEMORY_STORE: list[dict] = []  # [{vector: list[float], text: str, url: str, title: str}]
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors without numpy."""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _inmemory_search(
+    query_vector: list[float],
+    chunks: list[dict],
+    k: int,
+) -> list[RagSearchResult]:
+    """Search in-memory store using cosine similarity."""
+    scored = []
+    for item in chunks:
+        score = _cosine_similarity(query_vector, item["vector"])
+        scored.append((score, item))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [
+        RagSearchResult(
+            text=item["text"],
+            url=item["url"],
+            title=item["title"],
+            score=score,
+            page_chunk_index=item.get("page_chunk_index", 0),
+            page_chunk_total=item.get("page_chunk_total", 0),
+        )
+        for score, item in scored[:k]
+    ]
 
 
 def _get_qdrant() -> QdrantClient:
@@ -378,11 +424,6 @@ async def index_crawl_results(
     report progress back to the user.
     """
     settings = get_settings()
-    client = _get_qdrant()
-
-    if replace:
-        reset_collection(client)
-    _ensure_collection(client, vector_size=settings.rag_embedding_size)
 
     all_chunks: list[str] = []
     all_payloads: list[dict[str, Any]] = []
@@ -414,16 +455,36 @@ async def index_crawl_results(
         return {"pages": 0, "chunks": 0, "failures": failures}
 
     vectors = await _embed_in_batches(all_chunks)
-    ids = [uuid.uuid4().hex for _ in all_chunks]
-    _upsert_points(client, ids=ids, vectors=vectors, payloads=all_payloads)
 
-    summary = {
+    if qdrant_available and qdrant_client is not None:
+        client = _get_qdrant()
+        if replace:
+            reset_collection(client)
+        _ensure_collection(client, vector_size=settings.rag_embedding_size)
+        ids = [uuid.uuid4().hex for _ in all_chunks]
+        _upsert_points(client, ids=ids, vectors=vectors, payloads=all_payloads)
+        logger.info("Indexed crawl batch into Qdrant", pages=len(results) - failures, chunks=len(all_chunks))
+    else:
+        # In-memory fallback: store vectors + texts for cosine similarity search
+        global _IN_MEMORY_STORE
+        if replace:
+            _IN_MEMORY_STORE.clear()
+        for i, vector in enumerate(vectors):
+            _IN_MEMORY_STORE.append({
+                "vector": vector,
+                "text": all_chunks[i],
+                "url": all_payloads[i].get("url", ""),
+                "title": all_payloads[i].get("title", ""),
+                "page_chunk_index": all_payloads[i].get("page_chunk_index", 0),
+                "page_chunk_total": all_payloads[i].get("page_chunk_total", 0),
+            })
+        logger.info("Indexed crawl batch into in-memory store", pages=len(results) - failures, chunks=len(all_chunks))
+
+    return {
         "pages": len(results) - failures,
         "chunks": len(all_chunks),
         "failures": failures,
     }
-    logger.info("Indexed crawl batch into Qdrant", **summary)
-    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -470,48 +531,51 @@ async def search(query: str, *, top_k: int | None = None) -> list[RagSearchResul
     OpenAI key is missing - both are recoverable from the chat layer.
     """
     settings = get_settings()
-    client = _get_qdrant()
     k = top_k or settings.rag_top_k
-
-    # Skip search gracefully if the collection has no points yet.
-    try:
-        info = client.get_collection(collection_name=settings.qdrant_collection)
-    except Exception:  # noqa: BLE001
-        logger.info("Qdrant collection not initialised; search returns empty")
-        return []
-    if info.points_count == 0:
-        return []
 
     if openai_client is None:
         logger.warning("OpenAI key missing; search returns empty")
         return []
 
-    if qdrant_client is None:
-        logger.info("Qdrant not available; search returns empty")
+    if qdrant_available and qdrant_client is not None:
+        client = _get_qdrant()
+        try:
+            info = client.get_collection(collection_name=settings.qdrant_collection)
+        except Exception:  # noqa: BLE001
+            logger.info("Qdrant collection not initialised; search returns empty")
+            return []
+        if info.points_count == 0:
+            return []
+
+        query_vector = await embed_query(query)
+        raw_hits = client.query_points(
+            collection_name=settings.qdrant_collection,
+            query=query_vector,
+            limit=k,
+            with_payload=True,
+        )
+
+        results: list[RagSearchResult] = []
+        for point in raw_hits.points:
+            payload = point.payload or {}
+            results.append(
+                RagSearchResult(
+                    text=str(payload.get("text", "")),
+                    url=str(payload.get("url", "")),
+                    title=str(payload.get("title", "")),
+                    score=float(point.score or 0.0),
+                    page_chunk_index=int(payload.get("page_chunk_index", 0)),
+                    page_chunk_total=int(payload.get("page_chunk_total", 0)),
+                )
+            )
+        return results
+
+    # In-memory fallback
+    if not _IN_MEMORY_STORE:
         return []
 
     query_vector = await embed_query(query)
-    raw_hits = client.query_points(
-        collection_name=settings.qdrant_collection,
-        query=query_vector,
-        limit=k,
-        with_payload=True,
-    )
-
-    results: list[RagSearchResult] = []
-    for point in raw_hits.points:
-        payload = point.payload or {}
-        results.append(
-            RagSearchResult(
-                text=str(payload.get("text", "")),
-                url=str(payload.get("url", "")),
-                title=str(payload.get("title", "")),
-                score=float(point.score or 0.0),
-                page_chunk_index=int(payload.get("page_chunk_index", 0)),
-                page_chunk_total=int(payload.get("page_chunk_total", 0)),
-            )
-        )
-    return results
+    return _inmemory_search(query_vector, _IN_MEMORY_STORE, k)
 
 
 def format_context(results: list[RagSearchResult], *, max_chars: int = 6000) -> str:
