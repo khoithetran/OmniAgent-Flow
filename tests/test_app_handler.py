@@ -1,8 +1,9 @@
 """Verify model button click handler returns correct number of values."""
 import sys
-sys.path.insert(0, '.')
+from pathlib import Path
 
-# Trigger closure creation by simulating the build_ui flow
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import app_gradio as ag
 import gradio as gr
 
@@ -29,5 +30,4 @@ with gr.Blocks() as demo:
     print("Value 1 (btn1 update):", result[1])
     print("Value 2 (btn2 update):", result[2])
     print("Value 3 (btn3 update):", result[3])
-    print("Value 4 (btn4 update):", result[4])
-    print("Value 5 (label):", result[5])
+    print("Value 4 (label):", result[4])
