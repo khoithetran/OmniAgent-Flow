@@ -40,8 +40,14 @@ import gradio as gr  # noqa: E402
 
 from src import chat as chat_module  # noqa: E402
 from src.config import get_settings  # noqa: E402
-from src.crawler import crawl_full_website  # noqa: E402
 from src.rag import index_crawl_results  # noqa: E402
+
+# Use lightweight CPU crawler (no GPU/Chromium needed).
+# Falls back to crawl4ai when available (local dev).
+try:
+    from src.simple_crawler import crawl_full_website  # noqa: E402
+except ImportError:
+    from src.crawler import crawl_full_website  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -624,27 +630,37 @@ def build_ui() -> gr.Blocks:
 
 
 async def _init_clients() -> None:
-    """Initialise Redis / Qdrant / OpenAI clients once on startup."""
-    from src.main import redis_client as _placeholder  # noqa: F401
+    """Initialise Redis / Qdrant / OpenAI clients once on startup.
+
+    Redis and Qdrant are best-effort: if unavailable (e.g. HF Spaces
+    without a managed service), the app falls back to in-memory session
+    and general-LLM mode respectively.
+    """
+    import src.main as main_mod
     from src.rag import init_openai, init_qdrant
-    from src.main import redis_client
 
-    if redis_client is None:
-        from redis.asyncio import Redis
+    if main_mod.redis_client is None:
+        try:
+            from redis.asyncio import Redis
+            settings = get_settings()
+            client = Redis.from_url(
+                f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}",
+                decode_responses=True,
+            )
+            await client.ping()
+            main_mod.redis_client = client
+            logger.info("Redis connected", host=settings.redis_host)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Redis unavailable; using in-memory session store"
+            )
 
-        settings = get_settings()
-        client = Redis.from_url(
-            f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}",
-            decode_responses=True,
-        )
-        await client.ping()
-        # Replace the module-level redis_client in src.main so session.py
-        # can use it.
-        import src.main as main_mod
-        main_mod.redis_client = client
-
-    init_qdrant()
+    qdrant = init_qdrant()
     init_openai()
+    if qdrant is not None:
+        logger.info("Qdrant connected")
+    else:
+        logger.warning("Qdrant unavailable; RAG disabled (general LLM mode)")
 
 
 # ---------------------------------------------------------------------------

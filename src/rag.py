@@ -50,6 +50,7 @@ from src.crawler import CrawlResult, chunk_markdown
 
 qdrant_client: QdrantClient | None = None
 openai_client: AsyncOpenAI | None = None
+qdrant_available: bool = False
 
 
 def _get_qdrant() -> QdrantClient:
@@ -75,13 +76,27 @@ def _get_openai() -> AsyncOpenAI:
 # ---------------------------------------------------------------------------
 
 
-def init_qdrant() -> QdrantClient:
-    """Build a Qdrant client from settings. Idempotent."""
-    global qdrant_client
+def init_qdrant() -> QdrantClient | None:
+    """Build a Qdrant client from settings. Idempotent.
+
+    Returns None when Qdrant is unreachable so the app still works
+    in general-LLM mode (e.g. HF Spaces without a Qdrant instance).
+    """
+    global qdrant_client, qdrant_available
     if qdrant_client is None:
         settings = get_settings()
-        qdrant_client = QdrantClient(url=settings.qdrant_url)
-        logger.info("Qdrant client initialised", url=settings.qdrant_url)
+        try:
+            qdrant_client = QdrantClient(url=settings.qdrant_url, timeout=3)
+            # Quick health check
+            qdrant_client.get_collections()
+            qdrant_available = True
+            logger.info("Qdrant client initialised", url=settings.qdrant_url)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Qdrant unavailable; RAG features disabled (general LLM mode)"
+            )
+            qdrant_client = None
+            qdrant_available = False
     return qdrant_client
 
 
@@ -106,9 +121,10 @@ def init_openai() -> AsyncOpenAI | None:
 
 def close_clients() -> None:
     """Close module-level clients. Called from the FastAPI shutdown."""
-    global qdrant_client, openai_client
+    global qdrant_client, openai_client, qdrant_available
     qdrant_client = None
     openai_client = None
+    qdrant_available = False
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +484,10 @@ async def search(query: str, *, top_k: int | None = None) -> list[RagSearchResul
 
     if openai_client is None:
         logger.warning("OpenAI key missing; search returns empty")
+        return []
+
+    if qdrant_client is None:
+        logger.info("Qdrant not available; search returns empty")
         return []
 
     query_vector = await embed_query(query)

@@ -1,3 +1,14 @@
+---
+title: OmniAgent Flow
+emoji: 🤖
+colorFrom: purple
+colorTo: blue
+sdk: docker
+app_port: 7860
+suggested_storage: large
+pinned: false
+---
+
 # OmniAgent Flow
 
 RAG chatbot cho phép crawl bất kỳ website công ty nào và trả lời câu

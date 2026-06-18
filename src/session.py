@@ -46,11 +46,11 @@ def _pending_crawl_key(sender_id: str) -> str:
 
 
 async def _get_client() -> Redis:
-    """Return a Redis client, reusing the FastAPI lifespan one when set.
+    """Return a Redis client, falling back to in-memory store on connection failure.
 
-    When the lifespan has not been started (e.g. unit tests, one-off
-    scripts), we open a transient client from the configured URL and
-    cache it on this module so the rest of the chat flow works.
+    Reuses the FastAPI lifespan client when available.
+    When Redis is unavailable (HF Spaces, local dev without Redis),
+    falls back to InMemoryClient so the chat still works.
     """
     global _fallback_client
 
@@ -61,20 +61,29 @@ async def _get_client() -> Redis:
         if lifespan_client is not None:
             return lifespan_client
     except Exception:  # noqa: BLE001
-        # Import failure (e.g. src.main not yet loaded) - fall through
-        # to the lazy fallback below.
         pass
 
-    if _fallback_client is None:
-        from src.config import get_settings
+    if _fallback_client is not None:
+        return _fallback_client
 
-        settings = get_settings()
-        _fallback_client = Redis.from_url(
+    # Try Redis first; fall back to in-memory store on any error.
+    settings = get_settings()
+    try:
+        client = Redis.from_url(
             f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}",
             decode_responses=True,
         )
-        await _fallback_client.ping()
-    return _fallback_client
+        await client.ping()
+        _fallback_client = client
+        return _fallback_client
+    except Exception:  # noqa: BLE001
+        from src import memory_store
+
+        logger.warning(
+            "Redis unavailable; falling back to in-memory session store"
+        )
+        _fallback_client = memory_store.InMemoryClient()  # type: ignore[assignment]
+        return _fallback_client
 
 
 _fallback_client: Redis | None = None
