@@ -118,10 +118,9 @@ tests/
   test_crawler.py       - 25 tests: chunking, sitemap, filtering
   test_rag.py           - 15 tests: split, upsert, ensure, format
   test_chat.py          - 36 tests: helpers, chat(), chat_stream()
-test_app_gradio_smoke.py - 5 smoke tests for Gradio handlers
+  test_app_gradio_smoke.py - 5 smoke tests for Gradio handlers
 ```
 
 ## Documentation
 
 - [PLAN.md](PLAN.md) - Lộ trình triển khai chi tiết theo phase.
-- [EXPLAINATION.md](EXPLAINATION.md) - Tài liệu ôn tập phỏng vấn.
