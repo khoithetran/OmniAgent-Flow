@@ -414,20 +414,3 @@ def chunk_markdown(
         chunks.append(current)
 
     return chunks
-
-
-# ---------------------------------------------------------------------------
-# Auto-detection: use crawl4ai when available
-# ---------------------------------------------------------------------------
-
-_CRAWL4AI_AVAILABLE = False
-try:
-    from src.crawler import crawl_full_website as _crawl4ai_crawl
-
-    _CRAWL4AI_AVAILABLE = True
-except ImportError:
-    _CRAWL4AI_AVAILABLE = False
-
-
-if _CRAWL4AI_AVAILABLE:
-    crawl_full_website = _crawl4ai_crawl  # type: ignore[assignment]
