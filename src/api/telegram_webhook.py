@@ -47,7 +47,7 @@ from loguru import logger
 
 from src import chat, entity, session
 from src.config import get_settings
-from src.crawler import crawl_full_website
+from src.simple_crawler import crawl_full_website
 from src.rag import index_crawl_results
 
 

@@ -35,13 +35,12 @@ from redis.asyncio import Redis
 
 from src.api.telegram_webhook import router as telegram_router
 from src.config import get_settings
-from src.crawler import crawl_full_website, CrawlResult
 from src.rag import (
     init_openai,
     init_qdrant,
     index_crawl_results,
-    reset_collection,
 )
+from src.simple_crawler import CrawlResult, crawl_full_website
 
 
 # ---------------------------------------------------------------------------

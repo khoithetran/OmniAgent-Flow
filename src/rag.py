@@ -37,7 +37,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 from src.config import get_settings
-from src.crawler import CrawlResult, chunk_markdown
+from src.simple_crawler import CrawlResult, chunk_markdown
 
 
 # ---------------------------------------------------------------------------

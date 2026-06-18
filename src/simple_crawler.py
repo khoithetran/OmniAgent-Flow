@@ -316,6 +316,64 @@ async def crawl_full_website(
 
 
 # ---------------------------------------------------------------------------
+# Markdown chunking (shared, used by rag.py)
+# ---------------------------------------------------------------------------
+
+
+def chunk_markdown(
+    markdown: str,
+    *,
+    chunk_size: int = 1000,
+    overlap: int = 100,
+) -> list[str]:
+    """Split a markdown document into overlapping character chunks.
+
+    Simple paragraph-based splitter with configurable overlap so retrieval
+    does not lose context at chunk boundaries.
+    """
+    if chunk_size < 50:
+        raise ValueError("chunk_size must be >= 50")
+    if overlap < 0 or overlap >= chunk_size:
+        raise ValueError("overlap must be in [0, chunk_size)")
+
+    text = markdown.strip()
+    if not text:
+        return []
+
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return []
+
+    chunks: list[str] = []
+    current = ""
+    for paragraph in paragraphs:
+        if len(paragraph) > chunk_size:
+            sentences = [s.strip() for s in paragraph.split(". ") if s.strip()]
+            for sentence in sentences:
+                candidate = (current + "\n\n" + sentence).strip() if current else sentence
+                if len(candidate) > chunk_size and current:
+                    chunks.append(current)
+                    tail = current[-overlap:] if overlap else ""
+                    current = (tail + "\n\n" + sentence).strip()
+                else:
+                    current = candidate
+            continue
+
+        candidate = (current + "\n\n" + paragraph).strip() if current else paragraph
+        if len(candidate) > chunk_size and current:
+            chunks.append(current)
+            tail = current[-overlap:] if overlap else ""
+            current = (tail + "\n\n" + paragraph).strip()
+        else:
+            current = candidate
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+# ---------------------------------------------------------------------------
 # Auto-detection: use crawl4ai when available
 # ---------------------------------------------------------------------------
 
