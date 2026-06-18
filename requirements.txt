@@ -9,5 +9,6 @@ httpx==0.28.1
 openai==2.41.1
 qdrant-client[fastembed]>=1.14.1,<2.0.0
 crawl4ai
+gradio>=5.0
 pytest==8.3.4
 pytest-asyncio==0.25.0

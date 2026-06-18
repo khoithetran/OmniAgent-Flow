@@ -1,29 +1,31 @@
-"""Single-function chat layer for the Telegram chatbot.
+"""Single-function chat layer for the chatbot (Telegram + Gradio).
 
-This module is the only place that orchestrates a reply. The flow is:
+This module is the only place that orchestrates a reply. It supports two
+modes, both with and without RAG context:
 
-1. Read the sliding-window chat history from Redis so the LLM has
-   conversational context.
-2. Search the Qdrant knowledge base with the user's message. If hits
-   arrive, format them as a numbered context block.
-3. Call OpenAI chat completions with the system prompt, history,
-   context (if any), and the new user message.
-4. Save both the user message and the assistant reply to Redis.
-5. Return the reply text so the webhook can ship it to Telegram.
+**General mode (no KB)**
+    1. Read sliding-window chat history from Redis.
+    2. Check LLM response cache.
+    3. Build messages with ``SYSTEM_PROMPT_GENERAL``.
+    4. Call OpenAI chat completions (stream or non-stream).
 
-The system prompt is the only place where the bot's persona lives.
-It instructs the LLM to answer in Vietnamese, fall back gracefully
-when the knowledge base does not contain the answer, and ask the
-user to leave an email when the question is outside scope so a human
-can follow up.
+**RAG mode (KB ready)**
+    1. Read sliding-window chat history from Redis.
+    2. Check LLM response cache.
+    3. Search Qdrant for relevant chunks.
+    4. Build messages with ``SYSTEM_PROMPT_RAG`` + context block.
+    5. Call OpenAI chat completions (stream or non-stream).
 
-Two public entry points:
+The system prompts are the only place where the bot's persona lives.
+``SYSTEM_PROMPT_RAG`` is strict: if the answer is not in the KB, the LLM
+must say so and never make up information.
 
-- ``chat`` - returns the full reply as a string. Use this when
-  simple sync-style replies are enough.
-- ``chat_stream`` - yields partial text as the LLM produces it. The
-  Telegram webhook uses this to show a live "typing" experience by
-  editing the same message every few hundred milliseconds.
+Public entry points:
+
+- ``chat`` - non-streaming, returns string. (backward compatible)
+- ``chat_stream`` - streaming with ``kb_ready`` flag (Telegram legacy).
+- ``chat_general_stream`` - streaming general LLM (Gradio).
+- ``chat_rag_stream`` - streaming RAG (Gradio).
 """
 
 from __future__ import annotations
@@ -38,22 +40,35 @@ from src import session
 from src.config import get_settings
 
 
-SYSTEM_PROMPT = (
-    "Bạn là trợ lý ảo của công ty, trả lời các câu hỏi của khách hàng một cách "
-    "thân thiện, ngắn gọn và chính xác bằng tiếng Việt có dấu. "
-    "Mỗi câu trả lời phải dựa trên thông tin được cung cấp trong phần "
-    "'Knowledge Base' bên dưới. "
-    "Nếu thông tin không có trong Knowledge Base, hãy trả lời: "
-    "'Xin lỗi, tôi không tìm thấy thông tin này trong cơ sở dữ liệu. "
-    "Bạn có muốn để lại email để đội ngũ hỗ trợ liên hệ lại không?' "
-    "và KHÔNG bịa đặt thông tin. "
-    "Mỗi phát biểu nên được gắn citation theo số thứ tự trong ngoặc vuông, "
-    "ví dụ: [1], [2], để người dùng có thể truy ngược nguồn."
+# ---------------------------------------------------------------------------
+# System prompts
+# ---------------------------------------------------------------------------
+
+#: Prompt for general mode — used when no knowledge base is loaded.
+#: Bot can answer general questions and should recommend the user
+#: provide a URL for company-specific queries.
+SYSTEM_PROMPT_GENERAL = (
+    "Bạn là trợ lý ảo thân thiện, trả lời ngắn gọn bằng tiếng Việt có dấu. "
+    "Nếu câu hỏi liên quan đến công ty/tổ chức cụ thể mà bạn chưa có thông tin, "
+    "hãy gợi ý người dùng nhập URL website để được tra cứu chính xác hơn."
 )
+
+#: Prompt for RAG mode — used when a knowledge base is loaded.
+#: Bot MUST answer only from the provided Knowledge Base.
+SYSTEM_PROMPT_RAG = (
+    "Bạn là trợ lý ảo chỉ trả lời dựa trên 'Knowledge Base' được cung cấp bên dưới. "
+    "MỖI phát biểu phải gắn citation theo số thứ tự trong ngoặc vuông, ví dụ: [1], [2]. "
+    "Nếu thông tin không có trong Knowledge Base, hãy trả lời đúng: "
+    "'Không tìm thấy thông tin này trong tài liệu được cung cấp.' "
+    "TUYỆT ĐỐI KHÔNG bịa đặt, suy đoán, hay diễn giải thêm thông tin không có trong tài liệu."
+)
+
+#: Backward-compatible alias for tests and old call sites.
+SYSTEM_PROMPT = SYSTEM_PROMPT_RAG
 
 
 # ---------------------------------------------------------------------------
-# Chat entry point
+# Chat entry point (non-streaming, backward compatible)
 # ---------------------------------------------------------------------------
 
 
@@ -62,7 +77,9 @@ async def chat(sender_id: str, user_message: str) -> str:
 
     Returns the assistant text. Errors are caught and converted into a
     friendly fallback so the webhook can always return *something* to
-    the user.
+    the user. This is the legacy non-streaming entry point kept for
+    backward compatibility; new code should use ``chat_rag_stream`` or
+    ``chat_general_stream``.
     """
     if not get_settings().openai_api_key_value:
         return _missing_key_reply()
@@ -119,6 +136,9 @@ async def chat(sender_id: str, user_message: str) -> str:
 async def chat_stream(
     sender_id: str,
     user_message: str,
+    *,
+    kb_ready: bool = True,
+    model: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream the LLM reply as it is produced.
 
@@ -126,6 +146,19 @@ async def chat_stream(
     The caller can decide when to ship an update - for Telegram we
     wait until at least one new character has arrived and at least
     ``min_interval`` seconds have elapsed since the previous yield.
+
+    Parameters
+    ----------
+    sender_id:
+        Unique identifier for the conversation (Telegram user id, Gradio
+        session hash, etc).
+    user_message:
+        The new user turn to reply to.
+    kb_ready:
+        When True, use the RAG prompt and search Qdrant. When False, use
+        the general prompt and skip RAG (general LLM mode).
+    model:
+        OpenAI model name. Defaults to ``settings.openai_model``.
 
     Falls back to the non-streaming :func:`chat` if streaming is
     unavailable (no API key, no streaming client, OpenAI error).
@@ -154,24 +187,32 @@ async def chat_stream(
         yield cached
         return
 
-    context_block = await _retrieve_context(user_message)
-    messages = _build_messages(history, context_block, user_message)
+    # RAG context — only when KB is ready.
+    if kb_ready:
+        context_block = await _retrieve_context(user_message)
+        messages = _build_messages(history, context_block, user_message)
+    else:
+        context_block = ""
+        messages = _build_messages_general(history, user_message)
 
     settings = get_settings()
     client: AsyncOpenAI = rag._get_openai()  # type: ignore[assignment]
+    chosen_model = model or settings.openai_model
 
     accumulated = ""
     try:
         response = await client.chat.completions.create(
-            model=settings.openai_model,
-            messages=messages,
-            temperature=0.4,
-            max_tokens=600,
-            stream=True,
+            **_build_completion_kwargs(
+                model=chosen_model,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=600,
+                stream=True,
+            )
         )
     except Exception:  # noqa: BLE001
         logger.exception("OpenAI streaming failed; falling back to non-streaming")
-        full = await _call_openai(messages)
+        full = await _call_openai(messages, model=chosen_model)
         yield full
         await session.cache_set(user_message, full)
         await _persist_turn(sender_id, user_message, full)
@@ -213,6 +254,49 @@ async def chat_stream(
             logger.exception(
                 "Failed to set pending_email marker", sender_id=sender_id
             )
+
+
+# ---------------------------------------------------------------------------
+# Gradio-specific entry points
+# ---------------------------------------------------------------------------
+
+
+async def chat_general_stream(
+    sender_id: str,
+    user_message: str,
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    """Stream a general (non-RAG) LLM reply.
+
+    Used by the Gradio interface when no knowledge base is loaded.
+    Skips Qdrant entirely and uses ``SYSTEM_PROMPT_GENERAL``.
+    """
+    async for accumulated in chat_stream(
+        sender_id,
+        user_message,
+        kb_ready=False,
+        model=model,
+    ):
+        yield accumulated
+
+
+async def chat_rag_stream(
+    sender_id: str,
+    user_message: str,
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    """Stream a RAG-grounded LLM reply.
+
+    Used by the Gradio interface when a knowledge base is loaded.
+    Uses ``SYSTEM_PROMPT_RAG`` and Qdrant retrieval.
+    """
+    async for accumulated in chat_stream(
+        sender_id,
+        user_message,
+        kb_ready=True,
+        model=model,
+    ):
+        yield accumulated
 
 
 # ---------------------------------------------------------------------------
@@ -274,15 +358,34 @@ def _build_messages(
 
 
 def _build_system_prompt(context_block: str) -> str:
-    """Combine the static system prompt with the optional RAG context."""
+    """Combine the static system prompt with the optional RAG context.
+
+    When ``context_block`` is empty, returns the RAG prompt (since
+    ``_build_messages`` is only called from the RAG path, this branch
+    is rare in practice; for general mode we bypass the helper).
+    When context is present, appends the Knowledge Base section.
+    """
     if not context_block:
-        return SYSTEM_PROMPT
+        return SYSTEM_PROMPT_RAG
 
     return (
-        f"{SYSTEM_PROMPT}\n\n"
+        f"{SYSTEM_PROMPT_RAG}\n\n"
         "Knowledge Base (cited as [n]):\n"
         f"{context_block}"
     )
+
+
+def _build_messages_general(
+    history: list[dict[str, Any]],
+    user_message: str,
+) -> list[dict[str, Any]]:
+    """Build the OpenAI messages array for general (non-RAG) mode."""
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT_GENERAL},
+    ]
+    messages.extend(_sanitise_history(history))
+    messages.append({"role": "user", "content": user_message})
+    return messages
 
 
 def _sanitise_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -302,7 +405,7 @@ def _sanitise_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-async def _call_openai(messages: list[dict[str, Any]]) -> str:
+async def _call_openai(messages: list[dict[str, Any]], model: str | None = None) -> str:
     """Send ``messages`` to OpenAI and return the assistant text.
 
     Any exception is converted into a friendly fallback string so the
@@ -310,13 +413,17 @@ async def _call_openai(messages: list[dict[str, Any]]) -> str:
     """
     settings = get_settings()
     client: AsyncOpenAI = rag._get_openai()  # type: ignore[assignment]
+    chosen_model = model or settings.openai_model
 
     try:
         response = await client.chat.completions.create(
-            model=settings.openai_model,
-            messages=messages,
-            temperature=0.4,
-            max_tokens=600,
+            **_build_completion_kwargs(
+                model=chosen_model,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=600,
+                stream=False,
+            )
         )
     except Exception:  # noqa: BLE001
         logger.exception("OpenAI chat completion failed")
@@ -348,6 +455,46 @@ def _extract_delta(chunk: Any) -> str:
     delta = choices[0].delta
     content = getattr(delta, "content", None)
     return content or ""
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """Return True when ``model`` is an OpenAI o-series reasoning model.
+
+    Reasoning models (o1, o3, o4, …) reject ``max_tokens`` and require
+    ``max_completion_tokens``. We detect by name prefix so any future
+    o-series variant is handled automatically.
+    """
+    if not model:
+        return False
+    name = model.lower().strip()
+    return name.startswith(("o1", "o3", "o4", "o5"))
+
+
+def _build_completion_kwargs(
+    *,
+    model: str,
+    messages: list[dict[str, Any]],
+    temperature: float,
+    max_tokens: int,
+    stream: bool,
+) -> dict[str, Any]:
+    """Build kwargs for ``chat.completions.create``.
+
+    For o-series reasoning models, swap ``max_tokens`` for
+    ``max_completion_tokens`` and drop ``temperature`` (reasoning
+    models only support the default temperature=1).
+    """
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+    }
+    if _is_reasoning_model(model):
+        kwargs["max_completion_tokens"] = max_tokens
+    else:
+        kwargs["temperature"] = temperature
+        kwargs["max_tokens"] = max_tokens
+    return kwargs
 
 
 async def _persist_turn(sender_id: str, user_message: str, reply_text: str) -> None:

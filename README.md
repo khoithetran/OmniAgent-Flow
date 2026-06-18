@@ -1,43 +1,50 @@
 # OmniAgent Flow
 
-Telegram chatbot RAG cho phép crawl bất kỳ website công ty nào và trả
-lời câu hỏi dựa trên nội dung website đó.
+RAG chatbot cho phép crawl bất kỳ website công ty nào và trả lời câu
+hỏi dựa trên nội dung website đó. Có 2 giao diện:
+
+- **Gradio web UI** (mặc định, `python app_gradio.py`)
+- **Telegram bot** (legacy, đóng băng, chạy qua `uvicorn src.main:app`)
 
 ## Kiến trúc đơn giản
 
 ```
-Telegram ──► FastAPI webhook
-                   │
-            ┌──────┴──────┐
-            ▼             ▼
-         Redis         Qdrant
-      (session +        (RAG
-       pending)          KB)
-            ▲
-            │
-         OpenAI
-   (embedding + LLM)
+[Gradio / Telegram]
+        │
+        ▼
+   FastAPI / Gradio
+        │
+   ┌────┴────┐
+   ▼         ▼
+ Redis     Qdrant
+(session + (RAG KB)
+ cache)
+   ▲         │
+   │         ▼
+   └───── OpenAI
+       (embedding + LLM)
 ```
 
 ## Tech Stack
 
 | Tầng          | Công cụ                        |
 |--------------|-------------------------------|
-| HTTP API      | FastAPI (async)                |
+| Web UI        | Gradio 6.x (chat interface + model selector) |
+| HTTP API      | FastAPI (Telegram webhook, admin) |
 | Session/Cache | Redis (list + TTL)             |
 | Vector DB     | Qdrant (`text-embedding-3-small`) |
-| LLM + Embedding | OpenAI GPT-4o-mini / text-embedding-3-small |
+| LLM + Embedding | OpenAI (gpt-4o-mini, gpt-4o, o4-mini, gpt-4o-realtime) |
 | Crawler       | crawl4ai (Chromium headless)   |
 | Container     | Docker + Docker Compose        |
 | Testing       | pytest + pytest-asyncio (96 tests) |
 
-## Cách hoạt động
+## Cách hoạt động (Gradio)
 
-1. **User nhắn URL công ty** → bot crawl toàn bộ site qua sitemap, chunk, embed, index vào Qdrant.
-2. **User hỏi về công ty đó** → RAG tìm top-3 chunks, GPT-4o-mini trả lời tiếng Việt có citation.
-3. **User hỏi câu đã hỏi** → cache Redis trả ngay, không gọi LLM.
-4. **RAG không tìm thấy** → bot xin email, lưu Redis 30 ngày.
-5. **Không có URL** → entity detection (OpenAI tool calling) hỏi user gửi URL.
+1. **Chưa có tài liệu**: chat dùng general LLM, trả lời câu hỏi thông thường.
+2. **User nhập URL + bấm Fetch**: hệ thống crawl toàn bộ site, chunk, embed, index vào Qdrant.
+3. **Đã có tài liệu**: chat dùng RAG, chỉ trả lời từ tài liệu. Không tìm thấy → "Không tìm thấy thông tin này trong tài liệu." (KHÔNG bịa).
+4. **Bấm X trên panel** → xóa tài liệu, quay về chế độ general.
+5. **Model selector** (4 button): chọn `gpt-4o-mini`, `gpt-4o`, `o4-mini`, hoặc `gpt-4o-realtime` cho câu hỏi tiếp theo.
 
 ## Quick Start
 
@@ -47,20 +54,21 @@ Copy-Item .env.example .env
 
 # 2. Fill in .env:
 #    OPENAI_API_KEY=sk-...
-#    TELEGRAM_BOT_TOKEN=... (from @BotFather)
 #    REDIS_HOST=localhost
 #    QDRANT_HOST=localhost
 
 # 3. Start infra
 docker compose up -d redis qdrant
 
-# 4. Run app
-uvicorn src.main:app --reload
+# 4. Run Gradio UI (mặc định port 7860)
+python app_gradio.py
 
-# 5. (optional) Crawl a website and index it
-python crawl_websites.py https://example.com --max-pages 10 --replace
+# 5. Mở browser: http://127.0.0.1:7860
 
-# 6. Run tests
+# 6. (optional) Telegram bot — legacy, đóng băng
+uvicorn src.main:app --port 8000
+
+# 7. Run tests
 python -m pytest tests/ -v
 ```
 
@@ -96,11 +104,13 @@ src/
   session.py           - Redis: chat history, pending markers, LLM cache
   crawler.py           - crawl4ai: sitemap discovery, crawl, chunk
   rag.py               - Qdrant: index, search, format_context
-  chat.py              - Chat orchestration: RAG + LLM + cache + session
-  entity.py             - URL extraction, email, company detection (OpenAI)
+  chat.py              - Chat orchestration: chat(), chat_stream(),
+                          chat_general_stream(), chat_rag_stream()
+  entity.py             - URL extraction, email, company detection
   api/
-    telegram_webhook.py - Webhook handler + entity detection + Telegram reply
+    telegram_webhook.py - Telegram webhook handler (legacy, đóng băng)
 
+app_gradio.py          - Gradio web UI (mặc định, port 7860)
 crawl_websites.py      - One-shot crawl+index script
 tests/
   conftest.py          - Fixtures: mock_redis, mock_settings, cache clear
@@ -108,6 +118,7 @@ tests/
   test_crawler.py       - 25 tests: chunking, sitemap, filtering
   test_rag.py           - 15 tests: split, upsert, ensure, format
   test_chat.py          - 36 tests: helpers, chat(), chat_stream()
+test_app_gradio_smoke.py - 5 smoke tests for Gradio handlers
 ```
 
 ## Documentation
