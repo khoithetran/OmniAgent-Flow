@@ -664,6 +664,16 @@ async def _init_clients() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+
+def _health() -> dict[str, str]:
+    """Readiness probe — returns 200 once clients have been initialised."""
+    return {"status": "ok", "service": get_settings().app_name}
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -677,9 +687,14 @@ def main() -> None:
 
     port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
     demo = build_ui()
-    # Gradio 6: theme and other launch-time parameters go to launch().
+
+    # Mount a minimal /health route so container orchestrators (Railway,
+    # Render, Fly.io, Kubernetes, etc.) can confirm readiness.
+    # Gradio exposes its underlying FastAPI app as demo.app.
+    demo.app.add_api_route("/health", _health, methods=["GET"])
+
     demo.launch(
-        server_name="127.0.0.1",
+        server_name="0.0.0.0",
         server_port=port,
         show_error=True,
         theme=gr.themes.Soft(),

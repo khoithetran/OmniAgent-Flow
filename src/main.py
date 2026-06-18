@@ -145,6 +145,11 @@ class CrawlStatusResponse(BaseModel):
 
 @app.get("/health", tags=["health"])
 async def health_check() -> dict[str, str]:
+    try:
+        if redis_client is not None:
+            await redis_client.ping()
+    except Exception:
+        return {"status": "degraded", "service": settings.app_name}
     return {"status": "ok", "service": settings.app_name}
 
 
