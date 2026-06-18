@@ -62,6 +62,39 @@ SITEMAP_PATHS: tuple[str, ...] = (
     "/sitemap_index.xml",
 )
 
+# Realistic browser User-Agent to avoid being blocked by anti-bot protections
+DEFAULT_HEADERS: dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+# URLs that are known to require JavaScript rendering or are not supported
+UNSUPPORTED_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("github.com", "GitHub repository pages require JavaScript rendering. Try crawling a specific file or README via the raw URL."),
+    ("youtube.com", "YouTube requires JavaScript rendering. This crawler fetches static HTML only."),
+    ("youtu.be", "YouTube requires JavaScript rendering. This crawler fetches static HTML only."),
+    ("twitter.com", "Twitter/X requires JavaScript rendering. This crawler fetches static HTML only."),
+    ("x.com", "Twitter/X requires JavaScript rendering. This crawler fetches static HTML only."),
+    ("facebook.com", "Facebook requires JavaScript rendering. This crawler fetches static HTML only."),
+    ("instagram.com", "Instagram requires JavaScript rendering. This crawler fetches static HTML only."),
+    ("tiktok.com", "TikTok requires JavaScript rendering. This crawler fetches static HTML only."),
+)
+
+
+def _check_unsupported_url(url: str) -> str | None:
+    """Return an error message if the URL is known to require JS, else None."""
+    parsed = urlparse(url)
+    netloc = parsed.netloc.lower().removeprefix("www.")
+    for pattern, message in UNSUPPORTED_PATTERNS:
+        if netloc == pattern or netloc.endswith(f".{pattern}"):
+            return message
+    return None
+
 
 def _is_same_domain(url: str, base_netloc: str) -> bool:
     parsed = urlparse(url)
@@ -137,8 +170,14 @@ def _crawl_single_url(
     timeout: float = FETCH_TIMEOUT_SECONDS,
 ) -> CrawlResult:
     """Fetch one URL and extract readable markdown."""
+    # Check for known unsupported sites first
+    if unsupported := _check_unsupported_url(url):
+        return CrawlResult(
+            url=url, title="", markdown="", success=False, error_message=unsupported
+        )
+
     try:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        with httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
             response = client.get(url)
     except httpx.HTTPError as e:
         return CrawlResult(
@@ -234,6 +273,10 @@ def _fetch_sitemap(client: httpx.Client, sitemap_url: str) -> list[str]:
 
 async def discover_urls(base_url: str) -> list[str]:
     """Discover all URLs via sitemap (synchronous, used via asyncio.to_thread)."""
+    # Check for known unsupported sites first
+    if unsupported := _check_unsupported_url(base_url):
+        return []
+
     parsed = urlparse(base_url)
     if not parsed.scheme or not parsed.netloc:
         return [base_url]
@@ -241,7 +284,7 @@ async def discover_urls(base_url: str) -> list[str]:
     origin = f"{parsed.scheme}://{parsed.netloc}"
     found: list[str] = []
 
-    with httpx.Client(timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=True) as client:
+    with httpx.Client(timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
         for path in SITEMAP_PATHS:
             sitemap_url = urljoin(origin, path)
             urls = _fetch_sitemap(client, sitemap_url)
