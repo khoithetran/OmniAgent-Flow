@@ -11,127 +11,136 @@ pinned: false
 
 # OmniAgent Flow
 
-RAG chatbot cho phép crawl bất kỳ website công ty nào và trả lời câu
-hỏi dựa trên nội dung website đó. Có 2 giao diện:
+**OmniAgent Flow** là hệ thống Enterprise RAG Chatbot đa định dạng, cho phép crawl dữ liệu website hoặc tải lên các tệp văn bản doanh nghiệp (PDF, Word, Excel, Markdown) và tra cứu thông tin chính xác bằng kiến trúc **Two-Stage Retrieval** nâng cao.
 
-- **Gradio web UI** (mặc định, `python app_gradio.py`)
-- **Telegram bot** (legacy, đóng băng, chạy qua `uvicorn src.main:app`)
+Giao diện chính: **Gradio Web UI** (`python app_gradio.py`).
 
-## Kiến trúc đơn giản
+---
+
+## 🏗️ Kiến trúc Hệ thống RAG (Two-Stage Retrieval)
 
 ```
-[Gradio / Telegram]
-        │
-        ▼
-   FastAPI / Gradio
-        │
-   ┌────┴────┐
-   ▼         ▼
- Redis     Qdrant
-(session + (RAG KB)
- cache)
-   ▲         │
-   │         ▼
-   └───── OpenAI
-       (embedding + LLM)
+[User Query] / [Document Files / Web URLs]
+                     │
+                     ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 1. Document Parsing & Structure Extraction             │
+  │    • PDF (PyMuPDF)      • Word (python-docx)           │
+  │    • Excel (openpyxl)   • Web (crawl4ai / BeautifulSoup) │
+  └──────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 2. Multi-Strategy Chunking                             │
+  │    • Fixed-size         • Recursive Character          │
+  │    • Parent-Child       • Tokenizer-aware (tiktoken)   │
+  └──────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 3. Stage 1: Hybrid Retrieval (High Recall)             │
+  │    • Dense Search  : OpenAI text-embedding-3-small     │
+  │    • Sparse Search : BM25 Keyword Search               │
+  │    • Rank Fusion   : Reciprocal Rank Fusion (RRF)      │
+  └──────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 4. Stage 2: Reranking (High Precision)                 │
+  │    • Cross-Encoder (ms-marco-MiniLM-L-6-v2)           │
+  └──────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ 5. Generation & Grounded Citation                      │
+  │    • OpenAI LLM (gpt-4o-mini / gpt-4o / o4-mini)       │
+  │    • RAG Prompt Grounding + Source Citations [n]       │
+  └────────────────────────────────────────────────────────┘
 ```
 
-## Tech Stack
+---
 
-| Tầng          | Công cụ                        |
-|--------------|-------------------------------|
-| Web UI        | Gradio 6.x (chat interface + model selector) |
-| HTTP API      | FastAPI (Telegram webhook, admin) |
-| Session/Cache | Redis (list + TTL)             |
-| Vector DB     | Qdrant (`text-embedding-3-small`) |
-| LLM + Embedding | OpenAI (gpt-4o-mini, gpt-4o, o4-mini, gpt-4o-realtime) |
-| Crawler       | crawl4ai (Chromium headless)   |
-| Container     | Docker + Docker Compose        |
-| Testing       | pytest + pytest-asyncio (96 tests) |
+## 🛠️ Tech Stack & Kỹ thuật Nổi bật
 
-## Cách hoạt động (Gradio)
+| Tầng | Công cụ / Kỹ thuật |
+|---|---|
+| **Web UI** | Gradio 5.x (Streaming SSE, Model Selector, Document Upload & Strategy Selector) |
+| **Document Parsing** | PyMuPDF (PDF), python-docx (Word), openpyxl (Excel), BeautifulSoup4 |
+| **Chunking Engine** | 4 chiến lược: Fixed-size, Recursive, Parent-Child (Hierarchical), Tokenizer-aware (`tiktoken`) |
+| **Vector DB** | Qdrant (`text-embedding-3-small`, 1536 dims) + In-Memory Fallback |
+| **Sparse Search** | Rank-BM25 (Exact keyword match) + Reciprocal Rank Fusion (RRF) |
+| **Reranking** | Cross-Encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) |
+| **LLM Inference** | OpenAI API (`gpt-4o-mini`, `gpt-4o`, `o4-mini`) |
+| **HTTP API** | FastAPI (Lifespan resource manager) |
+| **Session / Cache** | Redis (sliding window session + same-question cache) |
 
-1. **Chưa có tài liệu**: chat dùng general LLM, trả lời câu hỏi thông thường.
-2. **User nhập URL + bấm Fetch**: hệ thống crawl toàn bộ site, chunk, embed, index vào Qdrant.
-3. **Đã có tài liệu**: chat dùng RAG, chỉ trả lời từ tài liệu. Không tìm thấy → "Không tìm thấy thông tin này trong tài liệu." (KHÔNG bịa).
-4. **Bấm X trên panel** → xóa tài liệu, quay về chế độ general.
-5. **Model selector** (4 button): chọn `gpt-4o-mini`, `gpt-4o`, `o4-mini`, hoặc `gpt-4o-realtime` cho câu hỏi tiếp theo.
+---
 
-## Quick Start
+## ✨ Tính năng Nổi bật
+
+1. **Đọc tài liệu đa định dạng (Document Intelligence)**:
+   * **PDF**: Trích xuất text theo thứ tự đọc tự nhiên bằng PyMuPDF.
+   * **Word (`.docx`)**: Duyệt cây XML để giữ nguyên thứ tự đoạn văn và định dạng bảng.
+   * **Excel (`.xlsx`)**: Ánh xạ tiêu đề cột với ô dữ liệu `Header: Value` giúp LLM hiểu bảng tính.
+2. **4 Chiến lược Phân mảnh (Chunking Strategies)**:
+   * **Fixed-size**: Cắt cố định theo số ký tự.
+   * **Recursive**: Ưu tiên cắt theo đoạn văn (`\n\n`) -> dòng (`\n`) -> câu (`. `).
+   * **Parent-Child**: 2 tầng chunk (Child 200 chars để search chính xác, Parent 1000 chars cho LLM đủ ngữ cảnh).
+   * **Tokenizer-aware**: Cắt chính xác theo BPE token (`cl100k_base`) tránh tràn Context Window.
+3. **Tìm kiếm 2 Giai đoạn (Two-Stage Retrieval)**:
+   * **Hybrid Search**: Kết hợp Vector Search ngữ nghĩa + BM25 tìm chính xác tên riêng/mã số.
+   * **Cross-Encoder Reranking**: Chấm điểm chú ý cặp (Query, Chunk) bằng mô hình Reranker giúp nâng cao độ chính xác trích xuất.
+
+---
+
+## 🚀 Quick Start
 
 ```powershell
-# 1. Copy env
+# 1. Copy env file
 Copy-Item .env.example .env
 
-# 2. Fill in .env:
+# 2. Điền thông tin vào .env:
 #    OPENAI_API_KEY=sk-...
 #    REDIS_HOST=localhost
 #    QDRANT_HOST=localhost
 
-# 3. Start infra
+# 3. Khởi động Infra (Redis + Qdrant Docker)
 docker compose up -d redis qdrant
 
-# 4. Run Gradio UI (mặc định port 7860)
+# 4. Cài đặt dependencies
+pip install -r requirements.txt
+
+# 5. Chạy giao diện Gradio UI (mặc định port 7860)
 python app_gradio.py
 
-# 5. Mở browser: http://127.0.0.1:7860
-
-# 6. (optional) Telegram bot — legacy, đóng băng
-uvicorn src.main:app --port 8000
-
-# 7. Run tests
-python -m pytest tests/ -v
+# 6. Truy cập trình duyệt: http://127.0.0.1:7860
 ```
 
-## API Endpoints
+---
 
-| Method | Path              | Mô tả                            |
-|--------|-------------------|----------------------------------|
-| GET    | `/`               | Healthcheck                      |
-| GET    | `/api/telegram/webhook` | Telegram webhook verify    |
-| POST   | `/api/telegram/webhook` | Nhận tin nhắn Telegram      |
-| POST   | `/api/crawl`     | Crawl + index website (admin)     |
-| DELETE | `/api/crawl`      | Xoá toàn bộ knowledge base       |
-| GET    | `/api/crawl/status` | KB stats (pages, chunks)      |
-
-## Environment Variables
-
-| Variable               | Mặc định       | Mô tả                   |
-|-----------------------|----------------|-------------------------|
-| `OPENAI_API_KEY`       | —              | Bắt buộc                |
-| `TELEGRAM_BOT_TOKEN`   | —              | Từ @BotFather          |
-| `REDIS_HOST`           | `localhost`    |                         |
-| `QDRANT_HOST`          | `localhost`    |                         |
-| `SESSION_TTL_SECONDS`  | `1800`        | 30 phút, sliding window |
-| `CACHE_TTL_SECONDS`    | `3600`        | 1 giờ, same-question cache |
-| `RAG_TOP_K`            | `3`           | Số chunks trả về        |
-
-## Project Structure
+## 📂 Structure Dự án
 
 ```
 src/
-  main.py              - FastAPI app + lifespan (Redis, Qdrant, OpenAI)
+  doc_loader.py        - Unified loader: PDF, DOCX, XLSX, MD, TXT -> DocPage
+  chunker.py           - 4 Chunking strategies: Fixed, Recursive, Parent-Child, Tokenizer
+  hybrid_search.py     - Sparse BM25 search + Reciprocal Rank Fusion (RRF)
+  reranker.py          - Cross-Encoder Reranking (ms-marco-MiniLM-L-6-v2)
+  rag.py               - Qdrant index/search pipeline + Two-stage retrieval
+  chat.py              - Chat orchestration: chat_stream(), chat_rag_stream()
+  simple_crawler.py    - CPU-based lightweight HTML crawler & Markdown extractor
+  crawler.py           - crawl4ai Chromium crawler (dùng cho JS-heavy sites)
+  session.py           - Redis session, pending markers, LLM cache
   config.py            - Pydantic settings (.env driven)
-  session.py           - Redis: chat history, pending markers, LLM cache
-  crawler.py           - crawl4ai: sitemap discovery, crawl, chunk
-  rag.py               - Qdrant: index, search, format_context
-  chat.py              - Chat orchestration: chat(), chat_stream(),
-                          chat_general_stream(), chat_rag_stream()
-  entity.py             - URL extraction, email, company detection
-  api/
-    telegram_webhook.py - Telegram webhook handler (legacy, đóng băng)
+  main.py              - FastAPI app + lifespan
 
-app_gradio.py          - Gradio web UI (mặc định, port 7860)
-crawl_websites.py      - One-shot crawl+index script
-tests/
-  conftest.py          - Fixtures: mock_redis, mock_settings, cache clear
-  test_session.py      - 20 tests: cache, pending, email, history
-  test_crawler.py       - 25 tests: chunking, sitemap, filtering
-  test_rag.py           - 15 tests: split, upsert, ensure, format
-  test_chat.py          - 36 tests: helpers, chat(), chat_stream()
-  test_app_gradio_smoke.py - 5 smoke tests for Gradio handlers
+app_gradio.py          - Gradio Web UI (Upload file, URL fetch, Strategy & Rerank controls)
+requirements.txt       - Dependencies
+tests/                 - Unit tests & Smoke tests
 ```
 
-## Documentation
+---
 
-- [PLAN.md](PLAN.md) - Lộ trình triển khai chi tiết theo phase.
+## 📄 Documentation
+
+- [PLAN.md](PLAN.md) - Lộ trình nâng cấp hệ thống chi tiết theo Phase.
