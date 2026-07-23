@@ -37,9 +37,10 @@ class Settings(BaseSettings):
     # LLM response cache
     cache_ttl_seconds: int = Field(default=3600, alias="CACHE_TTL_SECONDS")
 
-    # OpenAI
+    # LLM Providers
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+    anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
 
     # Qdrant
     qdrant_host: str = Field(default="localhost", alias="QDRANT_HOST")
@@ -73,6 +74,13 @@ class Settings(BaseSettings):
         if self.openai_api_key is None:
             return None
         value = self.openai_api_key.get_secret_value().strip()
+        return value or None
+
+    @property
+    def anthropic_api_key_value(self) -> str | None:
+        if self.anthropic_api_key is None:
+            return None
+        value = self.anthropic_api_key.get_secret_value().strip()
         return value or None
 
     @property
