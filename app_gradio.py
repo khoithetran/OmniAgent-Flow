@@ -612,8 +612,7 @@ def build_ui() -> gr.Blocks:
                 chunk_strategy_dropdown = gr.Dropdown(
                     choices=CHUNK_STRATEGY_LABELS,
                     value=CHUNK_STRATEGY_LABELS[0],
-                    label="Strategy",
-                    info="Cách chia nhỏ tài liệu",
+                    label="Chunking Strategy",
                 )
                 with gr.Row():
                     fetch_btn = gr.Button("Fetch & Index", variant="primary")
