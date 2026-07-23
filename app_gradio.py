@@ -590,35 +590,36 @@ def build_ui() -> gr.Blocks:
 
         # ---------------- Hàng 1: Panel Điều khiển (Top Bar) ----------------
         with gr.Row(equal_height=False):
-            # Cột 1: Website Fetching
+            # Cột 1: Upload file (Không gian chọn/drag/drop file)
             with gr.Column(scale=1):
-                gr.Markdown("### 🔗 Fetch Website")
-                url_input = gr.Textbox(
-                    placeholder="https://stripe.com",
-                    show_label=False,
-                    lines=1,
-                )
-                fetch_btn = gr.Button("Fetch & Index", variant="primary")
-
-            # Cột 2: File Upload (PDF/Word/Excel/MD)
-            with gr.Column(scale=1):
-                gr.Markdown("### 📁 Upload File (PDF/Doc/Xls/MD)")
+                gr.Markdown("### 📁 Upload File")
                 file_upload = gr.File(
-                    label="Chọn file",
+                    label="Kéo thả hoặc chọn file (PDF/Doc/Xls/MD)",
                     file_count="multiple",
                     file_types=supported_extensions(),
                     show_label=False,
-                    height=80,
+                    height=140,
+                )
+
+            # Cột 2: Fetch website & Ingestion Options
+            with gr.Column(scale=1):
+                gr.Markdown("### 🔗 Fetch Website & Options")
+                url_input = gr.Textbox(
+                    placeholder="https://...",
+                    show_label=False,
+                    lines=1,
                 )
                 chunk_strategy_dropdown = gr.Dropdown(
                     choices=CHUNK_STRATEGY_LABELS,
                     value=CHUNK_STRATEGY_LABELS[0],
-                    label="Chunking Strategy",
+                    label="Strategy",
                     info="Cách chia nhỏ tài liệu",
                 )
-                upload_btn = gr.Button("Upload & Index", variant="secondary")
+                with gr.Row():
+                    fetch_btn = gr.Button("Fetch & Index", variant="primary")
+                    upload_btn = gr.Button("Upload & Index", variant="secondary")
 
-            # Cột 3: Trạng thái KB & Cấu hình Retrieval
+            # Cột 3: Trạng thái KB & Cấu hình Retrieval (Giữ nguyên)
             with gr.Column(scale=1):
                 gr.Markdown("### 📄 KB Status & Retrieval")
                 status = gr.Markdown("⚠️ Chưa có tài liệu.")
