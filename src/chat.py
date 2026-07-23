@@ -139,29 +139,25 @@ async def chat_stream(
     *,
     kb_ready: bool = True,
     model: str | None = None,
+    enable_hybrid: bool = False,
+    enable_rerank: bool = False,
 ) -> AsyncIterator[str]:
-    """Stream the LLM reply as it is produced.
-
-    Yields the full accumulated text every time a new token arrives.
-    The caller can decide when to ship an update - for Telegram we
-    wait until at least one new character has arrived and at least
-    ``min_interval`` seconds have elapsed since the previous yield.
+    """Stream an assistant reply to ``user_message``.
 
     Parameters
     ----------
     sender_id:
-        Unique identifier for the conversation (Telegram user id, Gradio
-        session hash, etc).
+        Unique identifier for the conversation.
     user_message:
         The new user turn to reply to.
     kb_ready:
-        When True, use the RAG prompt and search Qdrant. When False, use
-        the general prompt and skip RAG (general LLM mode).
+        When True, use the RAG prompt and search Qdrant.
     model:
-        OpenAI model name. Defaults to ``settings.openai_model``.
-
-    Falls back to the non-streaming :func:`chat` if streaming is
-    unavailable (no API key, no streaming client, OpenAI error).
+        OpenAI model name.
+    enable_hybrid:
+        When True, use Hybrid Search (Dense + BM25 RRF).
+    enable_rerank:
+        When True, use Cross-Encoder Reranking on retrieved candidates.
     """
     if not get_settings().openai_api_key_value:
         yield _missing_key_reply()
@@ -189,7 +185,11 @@ async def chat_stream(
 
     # RAG context — only when KB is ready.
     if kb_ready:
-        context_block = await _retrieve_context(user_message)
+        context_block = await _retrieve_context(
+            user_message,
+            enable_hybrid=enable_hybrid,
+            enable_rerank=enable_rerank,
+        )
         messages = _build_messages(history, context_block, user_message)
     else:
         context_block = ""
@@ -284,6 +284,8 @@ async def chat_rag_stream(
     sender_id: str,
     user_message: str,
     model: str | None = None,
+    enable_hybrid: bool = False,
+    enable_rerank: bool = False,
 ) -> AsyncIterator[str]:
     """Stream a RAG-grounded LLM reply.
 
@@ -295,6 +297,8 @@ async def chat_rag_stream(
         user_message,
         kb_ready=True,
         model=model,
+        enable_hybrid=enable_hybrid,
+        enable_rerank=enable_rerank,
     ):
         yield accumulated
 
@@ -311,7 +315,12 @@ def _missing_key_reply() -> str:
     )
 
 
-async def _retrieve_context(user_message: str) -> str:
+async def _retrieve_context(
+    user_message: str,
+    *,
+    enable_hybrid: bool = False,
+    enable_rerank: bool = False,
+) -> str:
     """Run the RAG search and return a formatted context block.
 
     Returns an empty string when the OpenAI client is not ready or
@@ -320,7 +329,11 @@ async def _retrieve_context(user_message: str) -> str:
     if rag.openai_client is None:
         return ""
     try:
-        hits = await rag.search(user_message)
+        hits = await rag.search(
+            user_message,
+            enable_hybrid=enable_hybrid,
+            enable_rerank=enable_rerank,
+        )
         return rag.format_context(hits)
     except Exception:  # noqa: BLE001
         logger.exception("RAG search failed")

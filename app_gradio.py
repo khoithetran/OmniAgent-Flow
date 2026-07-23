@@ -401,6 +401,8 @@ async def handle_chat(
     user_message: str,
     history: list[dict[str, str]],
     state: dict[str, Any],
+    enable_hybrid: bool = False,
+    enable_rerank: bool = False,
 ) -> AsyncIterator[tuple[list[dict[str, str]], dict[str, Any], str]]:
     """Yield streaming chat updates for the Gradio Chatbot.
 
@@ -441,12 +443,15 @@ async def handle_chat(
         yield history, state, _usage(used_est)
         return
 
-    # 3. RAG pre-check: if KB is ready, try retrieval. If empty,
-    #    short-circuit with NOT_FOUND_REPLY (don't even call LLM).
+    # 3. RAG pre-check: if KB is ready, try retrieval with Hybrid + Rerank.
     if kb_ready:
         try:
             from src.rag import search, format_context
-            hits = await search(user_message)
+            hits = await search(
+                user_message,
+                enable_hybrid=enable_hybrid,
+                enable_rerank=enable_rerank,
+            )
             context_block = format_context(hits)
         except Exception:  # noqa: BLE001
             logger.exception("RAG search failed")
@@ -464,7 +469,13 @@ async def handle_chat(
     accumulated = ""
     try:
         stream_iter = (
-            chat_module.chat_rag_stream(sender_id, user_message, model=selected_model)
+            chat_module.chat_rag_stream(
+                sender_id,
+                user_message,
+                model=selected_model,
+                enable_hybrid=enable_hybrid,
+                enable_rerank=enable_rerank,
+            )
             if kb_ready
             else chat_module.chat_general_stream(sender_id, user_message, model=selected_model)
         )
@@ -671,6 +682,20 @@ def build_ui() -> gr.Blocks:
 
                 upload_btn = gr.Button("Upload & Index", variant="secondary")
 
+                # ---- Retrieval Optimization Section (Week 2) ----
+                gr.Markdown("---")
+                gr.Markdown("**⚙️ Retrieval Optimization (Week 2)**")
+                enable_hybrid_cb = gr.Checkbox(
+                    label="Hybrid Search (BM25 + Dense RRF)",
+                    value=True,
+                    info="Kết hợp tìm từ khóa và ngữ nghĩa",
+                )
+                enable_rerank_cb = gr.Checkbox(
+                    label="Cross-Encoder Reranking",
+                    value=True,
+                    info="Tái xếp hạng candidates bằng ms-marco model",
+                )
+
         # ---------------- Event wiring ----------------
 
         # 1. Model buttons: click to set active model.
@@ -785,14 +810,15 @@ def build_ui() -> gr.Blocks:
 
         # 5. Chat: Enter or Send button.
         chat_outputs = [chatbot, state, token_usage_display]
+        chat_inputs = [msg, chatbot, state, enable_hybrid_cb, enable_rerank_cb]
         send_event = msg.submit(
             fn=handle_chat,
-            inputs=[msg, chatbot, state],
+            inputs=chat_inputs,
             outputs=chat_outputs,
         )
         send_btn.click(
             fn=handle_chat,
-            inputs=[msg, chatbot, state],
+            inputs=chat_inputs,
             outputs=chat_outputs,
         )
 

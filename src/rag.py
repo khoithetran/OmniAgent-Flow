@@ -611,18 +611,39 @@ class RagSearchResult:
         }
 
 
-async def search(query: str, *, top_k: int | None = None) -> list[RagSearchResult]:
-    """Embed ``query`` and return the top-k most similar chunks.
+async def search(
+    query: str,
+    *,
+    top_k: int | None = None,
+    enable_hybrid: bool = False,
+    enable_rerank: bool = False,
+) -> list[RagSearchResult]:
+    """Embed ``query`` and return the most relevant chunks.
 
-    Empty result is returned when the collection is empty or the
-    OpenAI key is missing - both are recoverable from the chat layer.
+    Supports Two-Stage Retrieval:
+    - Stage 1: Dense Vector search (Qdrant or In-Memory) + optional BM25 Sparse search (RRF Fusion).
+    - Stage 2: Optional Cross-Encoder Reranking via ``src.reranker``.
+
+    Parameters
+    ----------
+    query:
+        The search query string.
+    top_k:
+        Number of hits to return (defaults to Settings.rag_top_k).
+    enable_hybrid:
+        If True, combines Dense vector search with BM25 sparse keyword search using RRF.
+    enable_rerank:
+        If True, reranks Stage 1 candidates using CrossEncoder (ms-marco-MiniLM-L-6-v2).
     """
     settings = get_settings()
     k = top_k or settings.rag_top_k
+    candidate_k = max(k * 4, 15)  # Larger candidate pool for stage 1
 
     if openai_client is None:
         logger.warning("OpenAI key missing; search returns empty")
         return []
+
+    dense_candidates: list[dict[str, Any]] = []
 
     if qdrant_available and qdrant_client is not None:
         client = _get_qdrant()
@@ -638,31 +659,82 @@ async def search(query: str, *, top_k: int | None = None) -> list[RagSearchResul
         raw_hits = client.query_points(
             collection_name=settings.qdrant_collection,
             query=query_vector,
-            limit=k,
+            limit=candidate_k if (enable_hybrid or enable_rerank) else k,
             with_payload=True,
         )
 
-        results: list[RagSearchResult] = []
         for point in raw_hits.points:
             payload = point.payload or {}
-            results.append(
-                RagSearchResult(
-                    text=str(payload.get("text", "")),
-                    url=str(payload.get("url", "")),
-                    title=str(payload.get("title", "")),
-                    score=float(point.score or 0.0),
-                    page_chunk_index=int(payload.get("page_chunk_index", 0)),
-                    page_chunk_total=int(payload.get("page_chunk_total", 0)),
-                )
-            )
-        return results
+            dense_candidates.append({
+                "text": str(payload.get("text", "")),
+                "url": str(payload.get("url", "")),
+                "title": str(payload.get("title", "")),
+                "score": float(point.score or 0.0),
+                "page_chunk_index": int(payload.get("page_chunk_index", 0)),
+                "page_chunk_total": int(payload.get("page_chunk_total", 0)),
+            })
+    else:
+        # In-memory fallback
+        if not _IN_MEMORY_STORE:
+            return []
 
-    # In-memory fallback
-    if not _IN_MEMORY_STORE:
+        query_vector = await embed_query(query)
+        in_mem_hits = _inmemory_search(
+            query_vector,
+            _IN_MEMORY_STORE,
+            candidate_k if (enable_hybrid or enable_rerank) else k,
+        )
+        dense_candidates = [hit.to_dict() for hit in in_mem_hits]
+
+    if not dense_candidates:
         return []
 
-    query_vector = await embed_query(query)
-    return _inmemory_search(query_vector, _IN_MEMORY_STORE, k)
+    # --- Stage 1: Hybrid Search (Dense + Sparse BM25 RRF Fusion) ---
+    stage1_candidates = dense_candidates
+    if enable_hybrid:
+        try:
+            from src.hybrid_search import bm25_search, reciprocal_rank_fusion
+
+            # Collect corpus for BM25 (from in-memory store or payload candidates)
+            corpus = _IN_MEMORY_STORE if _IN_MEMORY_STORE else dense_candidates
+            sparse_hits = bm25_search(query, corpus, top_k=candidate_k)
+
+            if sparse_hits:
+                stage1_candidates = reciprocal_rank_fusion(
+                    dense_candidates,
+                    sparse_hits,
+                    top_k=candidate_k if enable_rerank else k,
+                )
+                logger.info("Hybrid search applied with RRF fusion")
+        except Exception as exc:
+            logger.warning("Hybrid search failed, falling back to dense", error=str(exc))
+
+    # --- Stage 2: Reranking (Cross-Encoder) ---
+    final_candidates = stage1_candidates
+    if enable_rerank and stage1_candidates:
+        try:
+            from src.reranker import rerank
+
+            final_candidates = rerank(query, stage1_candidates, top_k=k)
+            logger.info("Reranking applied to candidate pool")
+        except Exception as exc:
+            logger.warning("Rerank failed, using stage 1 candidates", error=str(exc))
+
+    # Slice to final top_k
+    final_candidates = final_candidates[:k]
+
+    return [
+        RagSearchResult(
+            text=c.get("text", ""),
+            url=c.get("url", ""),
+            title=c.get("title", ""),
+            score=float(c.get("rerank_score", c.get("rrf_score", c.get("score", 0.0)))),
+            page_chunk_index=int(c.get("page_chunk_index", 0)),
+            page_chunk_total=int(c.get("page_chunk_total", 0)),
+        )
+        for c in final_candidates
+    ]
+
 
 
 def format_context(results: list[RagSearchResult], *, max_chars: int = 6000) -> str:
