@@ -603,99 +603,103 @@ def build_ui() -> gr.Blocks:
     }
 
     # Gradio 6+: theme must be passed to launch(), not Blocks().
-    with gr.Blocks(
-        title="OmniAgent Flow",
-    ) as demo:
+def build_ui() -> gr.Blocks:
+    """Construct the full Gradio app with clean minimalist layout."""
+    initial_state: dict[str, Any] = {
+        "kb_ready": False,
+        "kb_domain": "",
+        "kb_pages": 0,
+        "kb_chunks": 0,
+        "kb_url": "",
+        "selected_model": DEFAULT_MODEL,
+    }
+
+    with gr.Blocks(title="OmniAgent Flow") as demo:
         state = gr.State(value=initial_state)
 
-        # ---------------- Hàng 1: Panel Điều khiển (Top Bar) ----------------
-        with gr.Row(equal_height=False):
-            # Cột 1: Upload file (Không gian chọn/drag/drop file)
-            with gr.Column(scale=1):
-                gr.Markdown("### 📁 Upload File")
-                file_upload = gr.File(
-                    label="Kéo thả hoặc chọn file (PDF/Doc/Xls/MD)",
-                    file_count="multiple",
-                    file_types=supported_extensions(),
-                    show_label=False,
-                    height=140,
-                )
-
-            # Cột 2: Fetch website & Ingestion Options
-            with gr.Column(scale=1):
-                gr.Markdown("### 🔗 Fetch Website & Options")
-                url_input = gr.Textbox(
-                    placeholder="https://...",
-                    show_label=False,
-                    lines=1,
-                )
-                chunk_strategy_dropdown = gr.Dropdown(
-                    choices=CHUNK_STRATEGY_LABELS,
-                    value=CHUNK_STRATEGY_LABELS[0],
-                    label="Chunking Strategy",
-                )
-                with gr.Row():
-                    fetch_btn = gr.Button("Fetch & Index", variant="primary")
-                    upload_btn = gr.Button("Upload & Index", variant="secondary")
-
-            # Cột 3: Trạng thái KB & Cấu hình Retrieval (Giữ nguyên)
-            with gr.Column(scale=1):
-                gr.Markdown("### 📄 KB Status & Retrieval")
-                status = gr.Markdown("⚠️ Chưa có tài liệu.")
-
+        # ---------------- 1. Top Header Bar (Status & Clear KB) ----------------
+        with gr.Row():
+            with gr.Column(scale=4):
+                status = gr.Markdown("⚠️ **Trạng thái**: Chưa có tài liệu nào được nạp.")
                 with gr.Row(visible=False) as kb_row:
                     domain_display = gr.Markdown("🔗 ...")
-                    clear_x_btn = gr.Button("✕", variant="stop", size="sm", scale=0)
+                    clear_x_btn = gr.Button("✕ Xóa KB", variant="stop", size="sm", scale=0)
+            with gr.Column(scale=1):
+                clear_kb_btn = gr.Button("Clear KB", variant="stop", visible=False)
 
-                clear_kb_btn = gr.Button(
-                    "Clear KB",
-                    variant="stop",
-                    visible=False,
-                )
+        # ---------------- 2. Collapsible Data Ingestion (Accordion) ----------------
+        with gr.Accordion("📥 Nạp Dữ Liệu (Tải File hoặc Fetch Website)", open=True):
+            with gr.Tabs():
+                with gr.Tab("📁 Upload File (PDF / Word / Excel / MD)"):
+                    with gr.Row():
+                        file_upload = gr.File(
+                            label="Kéo thả hoặc chọn tệp văn bản",
+                            file_count="multiple",
+                            file_types=supported_extensions(),
+                            show_label=False,
+                            scale=3,
+                        )
+                        with gr.Column(scale=2):
+                            chunk_strategy_dropdown = gr.Dropdown(
+                                choices=CHUNK_STRATEGY_LABELS,
+                                value=CHUNK_STRATEGY_LABELS[0],
+                                label="Chunking Strategy",
+                            )
+                            upload_btn = gr.Button("🚀 Upload & Index File", variant="primary")
 
-                gr.Markdown("**⚙️ Search Optimization & Agent**")
+                with gr.Tab("🔗 Fetch Website URL"):
+                    with gr.Row():
+                        url_input = gr.Textbox(
+                            placeholder="Nhập URL website (ví dụ: https://stripe.com)...",
+                            show_label=False,
+                            scale=4,
+                        )
+                        fetch_btn = gr.Button("🚀 Fetch & Index Website", variant="primary", scale=1)
+
+        # ---------------- 3. Collapsible Search & Agent Settings ----------------
+        with gr.Accordion("⚙️ Tùy Chỉnh Tìm Kiếm & AI Agent (Tùy chọn nâng cao)", open=False):
+            with gr.Row():
                 enable_hybrid_cb = gr.Checkbox(
                     label="Hybrid Search (BM25 + Dense RRF)",
                     value=True,
-                    info="Kết hợp từ khóa và ngữ nghĩa",
+                    info="Kết hợp tìm từ khóa chính xác và ngữ nghĩa",
                 )
                 enable_rerank_cb = gr.Checkbox(
                     label="Cross-Encoder Reranking",
                     value=True,
-                    info="Tái xếp hạng bằng ms-marco model",
+                    info="Tái xếp hạng candidates bằng ms-marco model",
                 )
                 enable_agent_cb = gr.Checkbox(
                     label="🤖 AI Agent Mode (ReAct Tool Loop)",
                     value=False,
-                    info="LLM tự suy luận và gọi công cụ",
+                    info="LLM tự suy luận và gọi công cụ (Tools)",
                 )
 
-        gr.Markdown("---")
-
-        # ---- RAGAS Evaluation Dashboard (Week 3) ----
-        with gr.Accordion("📊 RAGAS Evaluation Dashboard (Week 3)", open=False):
+        # ---------------- 4. Collapsible RAGAS Evaluation Dashboard ----------------
+        with gr.Accordion("📊 RAGAS Evaluation Dashboard (Đánh giá chất lượng RAG)", open=False):
             with gr.Row():
                 eval_query_input = gr.Textbox(
                     placeholder="Nhập câu hỏi test để đánh giá RAGAS (vd: Doanh thu SAP Q2 là bao nhiêu?)...",
                     label="Query Thử Nghiệm",
                     scale=4,
                 )
-                run_eval_btn = gr.Button("⚡ Chạy RAGAS Evaluation", variant="primary", scale=1)
+                run_eval_btn = gr.Button("⚡ Chạy RAGAS Evaluation", variant="secondary", scale=1)
             eval_report_output = gr.Markdown("Chưa chạy evaluation. Nhập query và bấm nút để đánh giá.")
 
-        # ---------------- Hàng 2: Khu vực Chat (Main Chat Area) ----------------
+        gr.Markdown("---")
+
+        # ---------------- 5. Main Chat Area ----------------
         with gr.Column():
             chatbot = gr.Chatbot(
                 label="Chat",
-                height=480,
+                height=520,
                 show_label=False,
                 value=[
                     {
                         "role": "assistant",
                         "content": (
-                            "Xin chào! Tôi có thể giúp gì cho bạn?\n"
-                            "Nếu bạn cần thông tin chính xác từ nguồn có sẵn, "
-                            "hãy dùng chức năng Fetch & Index hoặc Upload File bên trên."
+                            "Xin chào! Tôi là trợ lý ảo **OmniAgent Flow**.\n"
+                            "Hãy nạp dữ liệu ở khung bên trên hoặc đặt câu hỏi trực tiếp!"
                         ),
                     }
                 ],
@@ -716,34 +720,25 @@ def build_ui() -> gr.Blocks:
             # Input row.
             with gr.Row():
                 msg = gr.Textbox(
-                    placeholder="Nhập câu hỏi...",
+                    placeholder="Nhập câu hỏi của bạn...",
                     show_label=False,
                     scale=5,
                     lines=1,
                 )
-                send_btn = gr.Button("Gửi", variant="primary", scale=1)
+                send_btn = gr.Button("🚀 Gửi", variant="primary", scale=1)
 
         # ---------------- Event wiring ----------------
 
         # 1. Model buttons: click to set active model.
-        # One handler per button — updates state, then propagates the new
-        # selected_model to ALL model buttons (only the matching one becomes
-        # "primary") and refreshes the context window display.
         def _make_select_handler(m: str):
             def _handler(s: dict[str, Any]):
                 new_state = select_model(s, m)[0]
-                variants = _button_variants(m)  # list of len(MODELS)
+                variants = _button_variants(m)
                 label = _context_window_label(m)
-                # Unpack the variants list so we return 1 value per output:
-                # state, btn1, btn2, btn3, btn4, context_window_display.
                 return (new_state, *variants, label)
             return _handler
 
         for btn, model_name in zip(model_buttons, MODELS):
-            # Each click must update ALL model buttons (only the matching
-            # one becomes "primary"). We splat the list of buttons into
-            # the outputs sequence; the handler returns a list of
-            # ``gr.update`` of the same length.
             outputs = [state, *model_buttons, context_window_display]
             btn.click(
                 fn=_make_select_handler(model_name),
@@ -768,7 +763,7 @@ def build_ui() -> gr.Blocks:
             fn=lambda s: (
                 f"🔗 **{s.get('kb_domain', '')}**"
                 if s.get("kb_ready")
-                else "⚠️ Chưa có tài liệu."
+                else "⚠️ **Trạng thái**: Chưa có tài liệu nào được nạp."
             ),
             inputs=[state],
             outputs=[domain_display],
@@ -788,7 +783,7 @@ def build_ui() -> gr.Blocks:
             inputs=[],
             outputs=[clear_kb_btn],
         ).then(
-            fn=lambda: "⚠️ Chưa có tài liệu.",
+            fn=lambda: "⚠️ **Trạng thái**: Chưa có tài liệu nào được nạp.",
             inputs=[],
             outputs=[domain_display],
         )
@@ -807,7 +802,7 @@ def build_ui() -> gr.Blocks:
             inputs=[],
             outputs=[clear_kb_btn],
         ).then(
-            fn=lambda: "⚠️ Chưa có tài liệu.",
+            fn=lambda: "⚠️ **Trạng thái**: Chưa có tài liệu nào được nạp.",
             inputs=[],
             outputs=[domain_display],
         )
@@ -829,7 +824,7 @@ def build_ui() -> gr.Blocks:
             fn=lambda s: (
                 f"📁 **{s.get('kb_domain', '')}**"
                 if s.get("kb_ready")
-                else "⚠️ Chưa có tài liệu."
+                else "⚠️ **Trạng thái**: Chưa có tài liệu nào được nạp."
             ),
             inputs=[state],
             outputs=[domain_display],
