@@ -139,8 +139,4 @@ requirements.txt       - Dependencies
 tests/                 - Unit tests & Smoke tests
 ```
 
----
 
-## 📄 Documentation
-
-- [PLAN.md](PLAN.md) - Lộ trình nâng cấp hệ thống chi tiết theo Phase.
