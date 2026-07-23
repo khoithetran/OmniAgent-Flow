@@ -602,7 +602,7 @@ def build_ui() -> gr.Blocks:
     # Gradio 6+: theme must be passed to launch(), not Blocks().
 CUSTOM_CSS = """
 .gradio-container {
-    max-width: 60% !important;
+    max-width: 70% !important;
     margin-left: auto !important;
     margin-right: auto !important;
 }

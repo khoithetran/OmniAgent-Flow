@@ -31,7 +31,7 @@ pinned: false
 
 | Tầng | Công nghệ / Thư viện |
 |---|---|
-| **Giao diện (UI)** | Gradio 5.x (Streaming SSE, Layout Sidebar Dashboard 1:3, Căn giữa 60% Width) |
+| **Giao diện (UI)** | Gradio 5.x (Streaming SSE, Layout Sidebar Dashboard 1:3, Căn giữa 70% Width) |
 | **Mô hình LLM & Agent** | Anthropic Claude API (`claude-3-5-sonnet`), ReAct Pattern Tool Loop |
 | **RAG Evaluation** | RAGAS Framework (Faithfulness, Answer Relevance, Context Precision/Recall) |
 | **Vector DB** | Qdrant Vector Database + In-Memory Fallback |
