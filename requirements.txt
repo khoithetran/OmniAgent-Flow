@@ -24,5 +24,6 @@ tiktoken>=0.7.0          # Tokenizer-aware chunking (OpenAI BPE)
 anthropic>=0.30.0              # Anthropic Claude API SDK
 sentence-transformers>=3.0.0  # Cross-encoder reranking
 rank-bm25>=0.2.2              # BM25 sparse keyword search
-
-
+# --- AI Agent & RAG Evaluation (Week 3) ---
+ragas>=0.1.0                   # RAG Evaluation Framework
+pandas>=2.0.0                  # Evaluation report dataframes

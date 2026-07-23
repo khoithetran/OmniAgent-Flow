@@ -17,11 +17,12 @@ pinned: false
 
 ## 🌟 Tính năng Chính
 
+- 🤖 **AI Agent (ReAct Tool Loop)**: LLM tự suy luận và kích hoạt các công cụ (`search_knowledge_base`, `get_document_metadata`, `calculate`, `get_current_time`).
+- 📊 **RAGAS Evaluation Dashboard**: Đánh giá định lượng chất lượng RAG qua 4 chỉ số `Faithfulness`, `Answer Relevance`, `Context Precision`, `Context Recall`.
 - 🌐 **Tra cứu Website**: Nhập URL bất kỳ để cào dữ liệu và tạo Knowledge Base tự động.
 - 📁 **Xử lý Tài liệu Đa định dạng**: Hỗ trợ đọc và trích xuất dữ liệu từ tệp **PDF, Word (.docx), Excel (.xlsx), Markdown (.md), Text (.txt)**.
 - 🧩 **4 Chiến lược Phân mảnh (Chunking)**: Hỗ trợ `Fixed-size`, `Recursive`, `Parent-Child (Phân tầng)` và `Tokenizer-aware`.
 - 🔍 **Tìm kiếm Lai 2 Giai đoạn (Two-Stage Retrieval)**: Kết hợp Tìm kiếm ngữ nghĩa (Dense Vector) + Tìm kiếm từ khóa (BM25 Sparse) + Re-ranking với Cross-Encoder.
-- 🤖 **Đa mô hình LLM**: Hỗ trợ **Anthropic Claude 3.5 Sonnet** và **OpenAI GPT**.
 - 💬 **Giao diện Web mượt mà**: Giao diện Gradio hỗ trợ phản hồi dạng Streaming realtime và Trích dẫn nguồn (Citations).
 
 ---
@@ -30,8 +31,9 @@ pinned: false
 
 | Tầng | Công nghệ / Thư viện |
 |---|---|
-| **Giao diện (UI)** | Gradio 5.x (Streaming SSE, Layout 2 Hàng ngang) |
-| **Mô hình LLM** | Anthropic Claude API (`claude-3-5-sonnet`), OpenAI API (`gpt-4o-mini`) |
+| **Giao diện (UI)** | Gradio 5.x (Streaming SSE, Layout 2 Hàng ngang, RAGAS Dashboard) |
+| **Mô hình LLM & Agent** | Anthropic Claude API (`claude-3-5-sonnet`), ReAct Pattern Tool Loop |
+| **RAG Evaluation** | RAGAS Framework (Faithfulness, Answer Relevance, Context Precision/Recall) |
 | **Vector DB** | Qdrant Vector Database + In-Memory Fallback |
 | **Đọc Tài liệu** | PyMuPDF (PDF), python-docx (Word), openpyxl (Excel), BeautifulSoup4 |
 | **Retrieval Optimization** | Rank-BM25 (Keyword Search), Cross-Encoder Reranker (`ms-marco-MiniLM-L-6-v2`), Tiktoken |
