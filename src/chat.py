@@ -1,4 +1,4 @@
-"""Single-function chat layer for the chatbot (Telegram + Gradio).
+"""Single-function chat layer for the chatbot.
 
 This module is the only place that orchestrates a reply. It supports two
 modes, both with and without RAG context:
@@ -7,14 +7,14 @@ modes, both with and without RAG context:
     1. Read sliding-window chat history from Redis.
     2. Check LLM response cache.
     3. Build messages with ``SYSTEM_PROMPT_GENERAL``.
-    4. Call OpenAI chat completions (stream or non-stream).
+    4. Call LLM API (stream or non-stream).
 
 **RAG mode (KB ready)**
     1. Read sliding-window chat history from Redis.
     2. Check LLM response cache.
-    3. Search Qdrant for relevant chunks.
+    3. Search Qdrant/BM25 for relevant chunks.
     4. Build messages with ``SYSTEM_PROMPT_RAG`` + context block.
-    5. Call OpenAI chat completions (stream or non-stream).
+    5. Call LLM API (stream or non-stream).
 
 The system prompts are the only place where the bot's persona lives.
 ``SYSTEM_PROMPT_RAG`` is strict: if the answer is not in the KB, the LLM
@@ -22,8 +22,6 @@ must say so and never make up information.
 
 Public entry points:
 
-- ``chat`` - non-streaming, returns string. (backward compatible)
-- ``chat_stream`` - streaming with ``kb_ready`` flag (Telegram legacy).
 - ``chat_general_stream`` - streaming general LLM (Gradio).
 - ``chat_rag_stream`` - streaming RAG (Gradio).
 """

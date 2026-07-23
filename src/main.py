@@ -3,8 +3,6 @@
 Endpoints
 ---------
 - ``GET  /health``                      - liveness check
-- ``GET  /api/telegram/webhook``         - Telegram webhook setup handshake
-- ``POST /api/telegram/webhook``         - incoming user message
 - ``POST /api/crawl``                    - admin: crawl + index a website
 - ``DELETE /api/crawl``                  - admin: drop the indexed KB
 - ``GET  /api/crawl/status``            - admin: KB stats
@@ -33,12 +31,12 @@ from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 from redis.asyncio import Redis
 
-from src.api.telegram_webhook import router as telegram_router
 from src.config import get_settings
 from src.rag import (
     init_openai,
     init_qdrant,
     index_crawl_results,
+    drop_knowledge_base,
 )
 from src.simple_crawler import CrawlResult, crawl_full_website
 

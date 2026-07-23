@@ -1,19 +1,16 @@
 """Gradio web interface for the OmniAgent Flow chatbot.
 
-Replaces (extends) the Telegram bot with a browser-based chat UI. The
-flow is intentionally simple:
+The flow is intentionally simple:
 
-- Left column (~75%): chat history, model selector, message input.
-- Right column (~25%): URL input, Fetch button, KB status, X button to
-  clear the KB.
+- Sidebar column (Scale 1): KB Status, Data Ingestion, Search & Agent Settings, RAGAS Eval Dashboard.
+- Main column (Scale 3): Chat history, Model Selector, message input.
 
 When no KB is loaded, the chat uses a general LLM (``SYSTEM_PROMPT_GENERAL``).
-When a URL has been fetched and indexed, the chat switches to RAG mode
+When a document/URL has been fetched and indexed, the chat switches to RAG mode
 (``SYSTEM_PROMPT_RAG``) and refuses to invent answers outside the document.
 
 Streaming is wired through Gradio's native ``type="messages"`` Chatbot +
-``stream`` event so the user sees tokens appear in real time without the
-throttling required by the Telegram webhook.
+``stream`` event so the user sees tokens appear in real time.
 
 Run with::
 
