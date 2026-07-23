@@ -13,3 +13,12 @@ crawl4ai>=0.3.0
 gradio>=5.0
 pytest==8.3.4
 pytest-asyncio==0.25.0
+
+# --- Document Processing (Week 1) ---
+PyMuPDF>=1.24.0          # PDF parsing (fitz)
+python-docx>=1.1.0       # Word (.docx) parsing
+openpyxl>=3.1.0          # Excel (.xlsx) parsing
+tiktoken>=0.7.0          # Tokenizer-aware chunking (OpenAI BPE)
+
+# --- Retrieval Optimization (Week 2 prep) ---
+sentence-transformers>=3.0.0  # Cross-encoder reranking
