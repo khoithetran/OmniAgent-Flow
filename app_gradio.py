@@ -399,15 +399,9 @@ async def handle_chat(
     state: dict[str, Any],
     enable_hybrid: bool = False,
     enable_rerank: bool = False,
+    enable_agent: bool = False,
 ) -> AsyncIterator[tuple[list[dict[str, str]], dict[str, Any], str]]:
-    """Yield streaming chat updates for the Gradio Chatbot.
-
-    Each yield is ``(history, state, usage_text)`` where ``usage_text``
-    is a Markdown-formatted "used / total tokens" string for the
-    context window display. The first yield appends the user message
-    so the UI shows it immediately. Subsequent yields replace the last
-    assistant turn with the accumulating reply.
-    """
+    """Yield streaming chat updates for the Gradio Chatbot."""
     selected_model = state.get("selected_model") or DEFAULT_MODEL
     total_window = CONTEXT_WINDOWS.get(selected_model, 128_000)
 
@@ -419,27 +413,44 @@ async def handle_chat(
         return
 
     user_message = user_message.strip()
-    sender_id = "gradio-default"  # Could be per-session in the future
+    sender_id = "gradio-default"
     kb_ready = bool(state.get("kb_ready"))
 
-    # 1. Append the user message immediately so the UI reflects it.
+    # 1. Append user message
     history = history + [{"role": "user", "content": user_message}]
-    # Rough estimate: system + history + user message so far.
     used_est = sum(_estimate_tokens(m.get("content", "")) for m in history)
     yield history, state, _usage(used_est)
 
-    # 2. RAG mode: if KB is empty after retrieval, return NOT_FOUND_REPLY.
-    if kb_ready and not state.get("kb_domain"):
-        # Defensive: state says ready but no domain — treat as no KB.
-        kb_ready = False
+    # 2. AI Agent Mode (ReAct Tool Loop)
+    if enable_agent:
+        from src.agent import run_agent_stream
 
-    if not get_settings().openai_api_key_value:
-        history = history + [{"role": "assistant", "content": GENERAL_MISSING_KEY}]
-        used_est = sum(_estimate_tokens(m.get("content", "")) for m in history)
-        yield history, state, _usage(used_est)
+        accumulated = ""
+        try:
+            async for partial in run_agent_stream(
+                user_message,
+                history[:-1],  # previous turns
+                kb_state=state,
+                enable_hybrid=enable_hybrid,
+                enable_rerank=enable_rerank,
+            ):
+                accumulated = partial
+                if history and history[-1].get("role") == "assistant":
+                    history = history[:-1] + [{"role": "assistant", "content": accumulated}]
+                else:
+                    history = history + [{"role": "assistant", "content": accumulated}]
+                used_est = sum(_estimate_tokens(m.get("content", "")) for m in history)
+                yield history, state, _usage(used_est)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Agent execution failed")
+            history = history + [{"role": "assistant", "content": f"Lỗi Agent: {exc}"}]
+            yield history, state, _usage(used_est)
         return
 
-    # 3. RAG pre-check: if KB is ready, try retrieval with Hybrid + Rerank.
+    # 3. Standard RAG mode
+    if kb_ready and not state.get("kb_domain"):
+        kb_ready = False
+
     if kb_ready:
         try:
             from src.rag import search, format_context
@@ -461,7 +472,7 @@ async def handle_chat(
             yield history, state, _usage(used_est)
             return
 
-    # 4. Stream the LLM reply token by token.
+    # 4. Stream LLM reply
     accumulated = ""
     try:
         stream_iter = (
@@ -477,15 +488,10 @@ async def handle_chat(
         )
         async for partial in stream_iter:
             accumulated = partial
-            # Replace the last assistant turn with the partial text.
             if history and history[-1].get("role") == "assistant":
-                history = history[:-1] + [
-                    {"role": "assistant", "content": accumulated}
-                ]
+                history = history[:-1] + [{"role": "assistant", "content": accumulated}]
             else:
-                history = history + [
-                    {"role": "assistant", "content": accumulated}
-                ]
+                history = history + [{"role": "assistant", "content": accumulated}]
             used_est = sum(_estimate_tokens(m.get("content", "")) for m in history)
             yield history, state, _usage(used_est)
     except Exception:  # noqa: BLE001
@@ -498,6 +504,24 @@ async def handle_chat(
         ]
         used_est = sum(_estimate_tokens(m.get("content", "")) for m in history)
         yield history, state, _usage(used_est)
+
+
+async def handle_eval_run(
+    query: str,
+    enable_hybrid: bool,
+    enable_rerank: bool,
+) -> str:
+    """Run RAGAS evaluation on query and return markdown summary."""
+    if not query or not query.strip():
+        return "⚠️ Vui lòng nhập câu hỏi thử nghiệm để đánh giá."
+    from src.eval import evaluate_rag_pipeline, format_eval_summary
+
+    result = await evaluate_rag_pipeline(
+        query.strip(),
+        enable_hybrid=enable_hybrid,
+        enable_rerank=enable_rerank,
+    )
+    return format_eval_summary(result)
 
 
 def select_model(
@@ -629,7 +653,7 @@ def build_ui() -> gr.Blocks:
                     visible=False,
                 )
 
-                gr.Markdown("**⚙️ Search Optimization**")
+                gr.Markdown("**⚙️ Search Optimization & Agent**")
                 enable_hybrid_cb = gr.Checkbox(
                     label="Hybrid Search (BM25 + Dense RRF)",
                     value=True,
@@ -640,8 +664,24 @@ def build_ui() -> gr.Blocks:
                     value=True,
                     info="Tái xếp hạng bằng ms-marco model",
                 )
+                enable_agent_cb = gr.Checkbox(
+                    label="🤖 AI Agent Mode (ReAct Tool Loop)",
+                    value=False,
+                    info="LLM tự suy luận và gọi công cụ",
+                )
 
         gr.Markdown("---")
+
+        # ---- RAGAS Evaluation Dashboard (Week 3) ----
+        with gr.Accordion("📊 RAGAS Evaluation Dashboard (Week 3)", open=False):
+            with gr.Row():
+                eval_query_input = gr.Textbox(
+                    placeholder="Nhập câu hỏi test để đánh giá RAGAS (vd: Doanh thu SAP Q2 là bao nhiêu?)...",
+                    label="Query Thử Nghiệm",
+                    scale=4,
+                )
+                run_eval_btn = gr.Button("⚡ Chạy RAGAS Evaluation", variant="primary", scale=1)
+            eval_report_output = gr.Markdown("Chưa chạy evaluation. Nhập query và bấm nút để đánh giá.")
 
         # ---------------- Hàng 2: Khu vực Chat (Main Chat Area) ----------------
         with gr.Column():
@@ -795,9 +835,23 @@ def build_ui() -> gr.Blocks:
             outputs=[domain_display],
         )
 
+        # 5c. RAGAS Evaluation button
+        run_eval_btn.click(
+            fn=handle_eval_run,
+            inputs=[eval_query_input, enable_hybrid_cb, enable_rerank_cb],
+            outputs=[eval_report_output],
+        )
+
         # 5. Chat: Enter or Send button.
         chat_outputs = [chatbot, state, token_usage_display]
-        chat_inputs = [msg, chatbot, state, enable_hybrid_cb, enable_rerank_cb]
+        chat_inputs = [
+            msg,
+            chatbot,
+            state,
+            enable_hybrid_cb,
+            enable_rerank_cb,
+            enable_agent_cb,
+        ]
         send_event = msg.submit(
             fn=handle_chat,
             inputs=chat_inputs,
