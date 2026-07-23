@@ -196,46 +196,50 @@ async def chat_stream(
         messages = _build_messages_general(history, user_message)
 
     settings = get_settings()
-    client: AsyncOpenAI = rag._get_openai()  # type: ignore[assignment]
     chosen_model = model or settings.openai_model
+    is_anthropic = "Anthropic" in chosen_model or "Claude" in chosen_model or "claude" in chosen_model
 
     accumulated = ""
-    try:
-        response = await client.chat.completions.create(
-            **_build_completion_kwargs(
-                model=chosen_model,
-                messages=messages,
-                temperature=0.4,
-                max_tokens=600,
-                stream=True,
+    if is_anthropic:
+        # Route to Anthropic API
+        anthropic_model = "claude-3-5-sonnet-20241022"
+        async for partial in _stream_anthropic(messages, model_name=anthropic_model):
+            accumulated = partial
+            yield accumulated
+    else:
+        if not settings.openai_api_key_value:
+            yield (
+                "⚠️ **Thông báo**: Tài khoản OpenAI hiện tại đã hết kinh phí hoạt động. "
+                "Vui lòng chọn mô hình **Anthropic - Claude Sonnet 5** bên trên để tiếp tục."
             )
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("OpenAI streaming failed; falling back to non-streaming")
-        full = await _call_openai(messages, model=chosen_model)
-        yield full
-        await session.cache_set(user_message, full)
-        await _persist_turn(sender_id, user_message, full)
-        if _should_capture_email(context_block, full):
-            try:
-                await session.set_pending_email(sender_id)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "Failed to set pending_email marker", sender_id=sender_id
-                )
-        return
+            return
 
-    async for chunk in response:
-        delta = _extract_delta(chunk)
-        if not delta:
-            continue
-        accumulated += delta
-        yield accumulated
+        client: AsyncOpenAI = rag._get_openai()  # type: ignore[assignment]
+        try:
+            response = await client.chat.completions.create(
+                **_build_completion_kwargs(
+                    model=chosen_model,
+                    messages=messages,
+                    temperature=0.4,
+                    max_tokens=600,
+                    stream=True,
+                )
+            )
+            async for chunk in response:
+                delta = _extract_delta(chunk)
+                if not delta:
+                    continue
+                accumulated += delta
+                yield accumulated
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("OpenAI streaming failed")
+            yield (
+                f"⚠️ OpenAI API Error (hết kinh phí / lỗi): {exc}. "
+                "Vui lòng chuyển sang chọn **Anthropic - Claude Sonnet 5**."
+            )
+            return
 
     if not accumulated:
-        # Stream completed but produced no text - rare but possible
-        # when the model is filtered. Yield the static fallback so
-        # the caller can still ship *something*.
         accumulated = (
             "Xin lỗi, tôi không nhận được phản hồi từ hệ thống. "
             "Vui lòng thử lại."
@@ -310,9 +314,53 @@ async def chat_rag_stream(
 
 def _missing_key_reply() -> str:
     return (
-        "Xin lỗi, hệ thống hiện chưa được cấu hình OpenAI key. "
+        "Xin lỗi, hệ thống hiện chưa được cấu hình API key. "
         "Vui lòng liên hệ quản trị viên."
     )
+
+
+async def _stream_anthropic(
+    messages: list[dict[str, Any]],
+    model_name: str = "claude-3-5-sonnet-20241022",
+) -> AsyncIterator[str]:
+    """Stream response from Anthropic Claude Messages API."""
+    settings = get_settings()
+    api_key = settings.anthropic_api_key_value
+    if not api_key:
+        yield "Xin lỗi, hệ thống chưa được cấu hình ANTHROPIC_API_KEY trong file .env."
+        return
+
+    system_prompt = ""
+    anthropic_messages: list[dict[str, str]] = []
+    for m in messages:
+        role = m.get("role")
+        content = m.get("content", "")
+        if role == "system":
+            system_prompt = content
+        elif role in ("user", "assistant") and content:
+            anthropic_messages.append({"role": role, "content": content})
+
+    if not anthropic_messages:
+        return
+
+    try:
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=api_key)
+
+        async with client.messages.stream(
+            model=model_name,
+            max_tokens=1024,
+            system=system_prompt,
+            messages=anthropic_messages,
+            temperature=0.4,
+        ) as stream:
+            accumulated = ""
+            async for text in stream.text_stream:
+                accumulated += text
+                yield accumulated
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Anthropic streaming failed")
+        yield f"⚠️ Lỗi khi gọi Anthropic API: {exc}"
 
 
 async def _retrieve_context(

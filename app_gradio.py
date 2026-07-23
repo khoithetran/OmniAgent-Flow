@@ -92,19 +92,15 @@ logger.add(
 #: - ``gpt-4o``: supported, uses ``max_tokens``.
 #: - ``o4-mini``: supported (reasoning model), uses ``max_completion_tokens``.
 MODELS: list[str] = [
-    "gpt-4o-mini",
-    "gpt-4o",
-    "o4-mini",
+    "OpenAI - GPT 5.4",
+    "Anthropic - Claude Sonnet 5",
 ]
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "Anthropic - Claude Sonnet 5"
 
-#: Maximum context window (in tokens) for each model. The values
-#: are surfaced in the UI so the user knows the model capacity.
 CONTEXT_WINDOWS: dict[str, int] = {
-    "gpt-4o-mini": 128_000,
-    "gpt-4o": 128_000,
-    "o4-mini": 200_000,
+    "OpenAI - GPT 5.4": 128_000,
+    "Anthropic - Claude Sonnet 5": 200_000,
 }
 
 
@@ -522,25 +518,25 @@ def _build_model_buttons() -> list[gr.Button]:
     """Build the model selector row as a list of Gradio buttons."""
     buttons = []
     for model_name in MODELS:
+        is_openai = "OpenAI" in model_name
+        label = f"🚫 {model_name} (Hết kinh phí)" if is_openai else f"⚡ {model_name}"
         btn = gr.Button(
-            model_name,
-            variant="secondary",
+            label,
+            variant="secondary" if is_openai else "primary",
             size="sm",
-            min_width=120,
+            min_width=180,
+            interactive=not is_openai,  # Disabled / grayed out for OpenAI
         )
         buttons.append(btn)
     return buttons
 
 
 def _button_variants(selected: str) -> list[gr.update]:
-    """Return a list of ``gr.update`` for each model button.
-
-    The button matching ``selected`` gets ``variant="primary"``; all
-    other buttons get ``variant="secondary"``. Use this in click
-    handlers to keep the highlight in sync.
-    """
     return [
-        gr.update(variant="primary" if m == selected else "secondary")
+        gr.update(
+            variant="primary" if m == selected else "secondary",
+            interactive="OpenAI" not in m,
+        )
         for m in MODELS
     ]
 
