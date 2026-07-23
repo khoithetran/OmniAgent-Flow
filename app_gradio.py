@@ -603,6 +603,20 @@ def build_ui() -> gr.Blocks:
     }
 
     # Gradio 6+: theme must be passed to launch(), not Blocks().
+CUSTOM_CSS = """
+.gradio-container {
+    max-width: 60% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+@media (max-width: 1024px) {
+    .gradio-container {
+        max-width: 95% !important;
+    }
+}
+"""
+
+
 def build_ui() -> gr.Blocks:
     """Construct the full Gradio app with 1:3 Sidebar Dashboard layout."""
     initial_state: dict[str, Any] = {
@@ -614,7 +628,7 @@ def build_ui() -> gr.Blocks:
         "selected_model": DEFAULT_MODEL,
     }
 
-    with gr.Blocks(title="OmniAgent Flow") as demo:
+    with gr.Blocks(title="OmniAgent Flow", css=CUSTOM_CSS) as demo:
         state = gr.State(value=initial_state)
 
         with gr.Row(equal_height=False):
