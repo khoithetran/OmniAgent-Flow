@@ -604,7 +604,7 @@ def build_ui() -> gr.Blocks:
 
     # Gradio 6+: theme must be passed to launch(), not Blocks().
 def build_ui() -> gr.Blocks:
-    """Construct the full Gradio app with clean minimalist layout."""
+    """Construct the full Gradio app with 1:3 Sidebar Dashboard layout."""
     initial_state: dict[str, Any] = {
         "kb_ready": False,
         "kb_domain": "",
@@ -617,29 +617,27 @@ def build_ui() -> gr.Blocks:
     with gr.Blocks(title="OmniAgent Flow") as demo:
         state = gr.State(value=initial_state)
 
-        # ---------------- 1. Top Header Bar (Status & Clear KB) ----------------
-        with gr.Row():
-            with gr.Column(scale=4):
+        with gr.Row(equal_height=False):
+            # ---------------- CỘT TRÁI: SIDEBAR CONTROL PANEL (Scale = 1) ----------------
+            with gr.Column(scale=1):
+                gr.Markdown("### 📄 KB Status & Control")
                 status = gr.Markdown("⚠️ **Trạng thái**: Chưa có tài liệu nào được nạp.")
                 with gr.Row(visible=False) as kb_row:
                     domain_display = gr.Markdown("🔗 ...")
                     clear_x_btn = gr.Button("✕ Xóa KB", variant="stop", size="sm", scale=0)
-            with gr.Column(scale=1):
                 clear_kb_btn = gr.Button("Clear KB", variant="stop", visible=False)
 
-        # ---------------- 2. Collapsible Data Ingestion (Accordion) ----------------
-        with gr.Accordion("📥 Nạp Dữ Liệu (Tải File hoặc Fetch Website)", open=True):
-            with gr.Tabs():
-                with gr.Tab("📁 Upload File (PDF / Word / Excel / MD)"):
-                    with gr.Row():
-                        file_upload = gr.File(
-                            label="Kéo thả hoặc chọn tệp văn bản",
-                            file_count="multiple",
-                            file_types=supported_extensions(),
-                            show_label=False,
-                            scale=3,
-                        )
-                        with gr.Column(scale=2):
+                # Accordion 1: Data Ingestion
+                with gr.Accordion("📥 Nạp Dữ Liệu (File / Web)", open=True):
+                    with gr.Tabs():
+                        with gr.Tab("📁 Upload File"):
+                            file_upload = gr.File(
+                                label="Kéo thả hoặc chọn tệp (PDF/Word/Excel/MD)",
+                                file_count="multiple",
+                                file_types=supported_extensions(),
+                                show_label=False,
+                                height=120,
+                            )
                             chunk_strategy_dropdown = gr.Dropdown(
                                 choices=CHUNK_STRATEGY_LABELS,
                                 value=CHUNK_STRATEGY_LABELS[0],
@@ -647,85 +645,80 @@ def build_ui() -> gr.Blocks:
                             )
                             upload_btn = gr.Button("🚀 Upload & Index File", variant="primary")
 
-                with gr.Tab("🔗 Fetch Website URL"):
-                    with gr.Row():
-                        url_input = gr.Textbox(
-                            placeholder="Nhập URL website (ví dụ: https://stripe.com)...",
-                            show_label=False,
-                            scale=4,
-                        )
-                        fetch_btn = gr.Button("🚀 Fetch & Index Website", variant="primary", scale=1)
+                        with gr.Tab("🔗 Fetch Web"):
+                            url_input = gr.Textbox(
+                                placeholder="https://...",
+                                show_label=False,
+                                lines=1,
+                            )
+                            fetch_btn = gr.Button("🚀 Fetch & Index Web", variant="primary")
 
-        # ---------------- 3. Collapsible Search & Agent Settings ----------------
-        with gr.Accordion("⚙️ Tùy Chỉnh Tìm Kiếm & AI Agent (Tùy chọn nâng cao)", open=False):
-            with gr.Row():
-                enable_hybrid_cb = gr.Checkbox(
-                    label="Hybrid Search (BM25 + Dense RRF)",
-                    value=True,
-                    info="Kết hợp tìm từ khóa chính xác và ngữ nghĩa",
-                )
-                enable_rerank_cb = gr.Checkbox(
-                    label="Cross-Encoder Reranking",
-                    value=True,
-                    info="Tái xếp hạng candidates bằng ms-marco model",
-                )
-                enable_agent_cb = gr.Checkbox(
-                    label="🤖 AI Agent Mode (ReAct Tool Loop)",
-                    value=False,
-                    info="LLM tự suy luận và gọi công cụ (Tools)",
-                )
+                # Accordion 2: Search & Agent Settings
+                with gr.Accordion("⚙️ Tùy Chỉnh Tìm Kiếm & Agent", open=False):
+                    enable_hybrid_cb = gr.Checkbox(
+                        label="Hybrid Search (BM25 + Dense RRF)",
+                        value=True,
+                        info="Kết hợp từ khóa chính xác và ngữ nghĩa",
+                    )
+                    enable_rerank_cb = gr.Checkbox(
+                        label="Cross-Encoder Reranking",
+                        value=True,
+                        info="Tái xếp hạng bằng ms-marco model",
+                    )
+                    enable_agent_cb = gr.Checkbox(
+                        label="🤖 AI Agent Mode (ReAct Loop)",
+                        value=False,
+                        info="LLM tự suy luận và gọi công cụ",
+                    )
 
-        # ---------------- 4. Collapsible RAGAS Evaluation Dashboard ----------------
-        with gr.Accordion("📊 RAGAS Evaluation Dashboard (Đánh giá chất lượng RAG)", open=False):
-            with gr.Row():
-                eval_query_input = gr.Textbox(
-                    placeholder="Nhập câu hỏi test để đánh giá RAGAS (vd: Doanh thu SAP Q2 là bao nhiêu?)...",
-                    label="Query Thử Nghiệm",
-                    scale=4,
-                )
-                run_eval_btn = gr.Button("⚡ Chạy RAGAS Evaluation", variant="secondary", scale=1)
-            eval_report_output = gr.Markdown("Chưa chạy evaluation. Nhập query và bấm nút để đánh giá.")
+                # Accordion 3: RAGAS Evaluation Dashboard
+                with gr.Accordion("📊 RAGAS Evaluation Dashboard", open=False):
+                    eval_query_input = gr.Textbox(
+                        placeholder="Nhập query thử nghiệm...",
+                        label="Query Thử Nghiệm",
+                        lines=1,
+                    )
+                    run_eval_btn = gr.Button("⚡ Chạy Evaluation", variant="secondary")
+                    eval_report_output = gr.Markdown("Chưa chạy evaluation.")
 
-        gr.Markdown("---")
-
-        # ---------------- 5. Main Chat Area ----------------
-        with gr.Column():
-            chatbot = gr.Chatbot(
-                label="Chat",
-                height=520,
-                show_label=False,
-                value=[
-                    {
-                        "role": "assistant",
-                        "content": (
-                            "Xin chào! Tôi là trợ lý ảo **OmniAgent Flow**.\n"
-                            "Hãy nạp dữ liệu ở khung bên trên hoặc đặt câu hỏi trực tiếp!"
-                        ),
-                    }
-                ],
-            )
-
-            # Model selector row.
-            with gr.Row():
-                model_buttons = _build_model_buttons()
-
-            with gr.Row():
-                context_window_display = gr.Markdown(
-                    value=_context_window_label(DEFAULT_MODEL),
-                )
-                token_usage_display = gr.Markdown(
-                    value=_format_usage(0, CONTEXT_WINDOWS[DEFAULT_MODEL]),
-                )
-
-            # Input row.
-            with gr.Row():
-                msg = gr.Textbox(
-                    placeholder="Nhập câu hỏi của bạn...",
+            # ---------------- CỘT PHẢI: MAIN CHAT CANVAS (Scale = 3) ----------------
+            with gr.Column(scale=3):
+                chatbot = gr.Chatbot(
+                    label="Chat",
+                    height=600,
                     show_label=False,
-                    scale=5,
-                    lines=1,
+                    value=[
+                        {
+                            "role": "assistant",
+                            "content": (
+                                "Xin chào! Tôi là trợ lý ảo **OmniAgent Flow**.\n"
+                                "Hãy nạp tài liệu ở **Sidebar Cột Trái** hoặc đặt câu hỏi trực tiếp tại đây!"
+                            ),
+                        }
+                    ],
                 )
-                send_btn = gr.Button("🚀 Gửi", variant="primary", scale=1)
+
+                # Model selector row.
+                with gr.Row():
+                    model_buttons = _build_model_buttons()
+
+                with gr.Row():
+                    context_window_display = gr.Markdown(
+                        value=_context_window_label(DEFAULT_MODEL),
+                    )
+                    token_usage_display = gr.Markdown(
+                        value=_format_usage(0, CONTEXT_WINDOWS[DEFAULT_MODEL]),
+                    )
+
+                # Input row.
+                with gr.Row():
+                    msg = gr.Textbox(
+                        placeholder="Nhập câu hỏi của bạn...",
+                        show_label=False,
+                        scale=5,
+                        lines=1,
+                    )
+                    send_btn = gr.Button("🚀 Gửi", variant="primary", scale=1)
 
         # ---------------- Event wiring ----------------
 
