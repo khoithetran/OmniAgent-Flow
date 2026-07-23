@@ -41,6 +41,8 @@ import gradio as gr  # noqa: E402
 from src import chat as chat_module  # noqa: E402
 from src.config import get_settings  # noqa: E402
 from src.rag import index_crawl_results  # noqa: E402
+from src.doc_loader import load_document_from_bytes, supported_extensions  # noqa: E402
+from src.chunker import ChunkStrategy, chunk_pages  # noqa: E402
 
 # Use lightweight CPU crawler (no GPU/Chromium needed).
 # Falls back to crawl4ai when available (local dev).
@@ -48,6 +50,18 @@ try:
     from src.simple_crawler import crawl_full_website  # noqa: E402
 except ImportError:
     from src.crawler import crawl_full_website  # noqa: E402
+
+
+# Chunking strategy choices for the Gradio dropdown.
+# Each tuple: (display_label, ChunkStrategy value)
+CHUNK_STRATEGIES: list[tuple[str, str]] = [
+    ("Recursive (recommended)", ChunkStrategy.RECURSIVE),
+    ("Fixed-size", ChunkStrategy.FIXED),
+    ("Parent-Child", ChunkStrategy.PARENT_CHILD),
+    ("Tokenizer-aware", ChunkStrategy.TOKENIZER),
+]
+CHUNK_STRATEGY_LABELS = [label for label, _ in CHUNK_STRATEGIES]
+CHUNK_STRATEGY_VALUES = {label: val for label, val in CHUNK_STRATEGIES}
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +257,128 @@ async def handle_fetch(
     )
 
     return (new_state, status, "", new_history)
+
+
+async def handle_upload(
+    state: dict[str, Any],
+    files: list | None,
+    strategy_label: str,
+) -> tuple[dict[str, Any], str, list[dict[str, str]]]:
+    """Index uploaded document files (PDF/Word/Excel/MD) into Qdrant.
+
+    Parameters
+    ----------
+    state:
+        Current Gradio state dict.
+    files:
+        List of file objects from gr.File (each has .name path on disk).
+    strategy_label:
+        Display label from the chunking strategy dropdown.
+
+    Returns
+    -------
+    (new_state, status_text, chat_history)
+    """
+    if not files:
+        return state, "⚠️ Vui lòng chọn ít nhất một file.", []
+
+    from src.rag import index_doc_chunks  # noqa: E402
+
+    strategy = CHUNK_STRATEGY_VALUES.get(strategy_label, ChunkStrategy.RECURSIVE)
+    logger.info("Upload started", files=[f.name for f in files], strategy=strategy)
+
+    all_chunks: list = []
+    file_names: list[str] = []
+    total_pages = 0
+
+    for file_obj in files:
+        file_path = Path(file_obj.name)
+        filename = file_path.name
+        file_names.append(filename)
+
+        try:
+            # Step 1: Load document → list[DocPage]
+            pages = await asyncio.to_thread(
+                load_document_from_bytes, file_path.read_bytes(), filename
+            )
+            total_pages += len(pages)
+
+            # Step 2: Chunk using selected strategy → list[Chunk]
+            chunks = await asyncio.to_thread(
+                chunk_pages,
+                pages,
+                strategy,
+                chunk_size=500,
+                overlap=50,
+                parent_size=1000,
+                child_size=200,
+                max_tokens=256,
+                overlap_tokens=32,
+            )
+            all_chunks.extend(chunks)
+
+            retrieval_count = sum(1 for c in chunks if not c.is_parent)
+            logger.info(
+                "File processed",
+                filename=filename,
+                pages=len(pages),
+                total_chunks=len(chunks),
+                retrieval_chunks=retrieval_count,
+                strategy=strategy,
+            )
+
+        except ValueError as e:
+            return state, f"❌ {filename}: {e}", []
+        except ImportError as e:
+            return state, f"❌ Thiếu thư viện: {e}. Chạy: pip install -r requirements.txt", []
+        except Exception:  # noqa: BLE001
+            logger.exception("File processing failed", filename=filename)
+            return state, f"❌ Không xử lý được file: {filename}", []
+
+    if not all_chunks:
+        return state, "❌ Không trích xuất được nội dung từ các file đã chọn.", []
+
+    # Step 3: Embed + index vào Qdrant (hoặc in-memory fallback)
+    try:
+        summary = await index_doc_chunks(all_chunks, replace=False)
+    except Exception:  # noqa: BLE001
+        logger.exception("Upload index failed")
+        return state, "❌ Index thất bại. Kiểm tra kết nối Qdrant.", []
+
+    indexed = summary["indexed"]
+    source_label = ", ".join(file_names[:3])
+    if len(file_names) > 3:
+        source_label += f" (+{len(file_names) - 3} files)"
+
+    new_state: dict[str, Any] = {
+        **state,
+        "kb_ready": True,
+        "kb_domain": source_label,
+        "kb_pages": total_pages,
+        "kb_chunks": indexed,
+        "kb_url": "",
+    }
+
+    status = (
+        f"✅ {len(file_names)} file(s), {total_pages} trang, "
+        f"{indexed} chunks indexed.\n"
+        f"Strategy: **{strategy_label}**"
+    )
+    new_history = [{
+        "role": "assistant",
+        "content": (
+            f"⚠️ **Đã index {len(file_names)} file(s)** ({strategy_label}). "
+            "Tôi chỉ trả lời dựa trên nội dung tài liệu đã cung cấp."
+        ),
+    }]
+
+    logger.info(
+        "Upload index complete",
+        files=len(file_names),
+        chunks=indexed,
+        strategy=strategy,
+    )
+    return new_state, status, new_history
 
 
 async def handle_clear_kb(
@@ -515,6 +651,26 @@ def build_ui() -> gr.Blocks:
                 )
                 fetch_btn = gr.Button("Fetch & Index", variant="primary")
 
+                # ---- File Upload Section (Week 1) ----
+                gr.Markdown("---")
+                gr.Markdown("**📁 Upload File** (PDF / Word / Excel / MD)")
+
+                file_upload = gr.File(
+                    label="Chọn file",
+                    file_count="multiple",
+                    file_types=supported_extensions(),
+                    show_label=False,
+                )
+
+                chunk_strategy_dropdown = gr.Dropdown(
+                    choices=CHUNK_STRATEGY_LABELS,
+                    value=CHUNK_STRATEGY_LABELS[0],
+                    label="Chunking Strategy",
+                    info="Cách chia nhỏ tài liệu trước khi index",
+                )
+
+                upload_btn = gr.Button("Upload & Index", variant="secondary")
+
         # ---------------- Event wiring ----------------
 
         # 1. Model buttons: click to set active model.
@@ -601,6 +757,29 @@ def build_ui() -> gr.Blocks:
         ).then(
             fn=lambda: "⚠️ Chưa có tài liệu.",
             inputs=[],
+            outputs=[domain_display],
+        )
+
+        # 5b. Upload files.
+        upload_btn.click(
+            fn=handle_upload,
+            inputs=[state, file_upload, chunk_strategy_dropdown],
+            outputs=[state, status, chatbot],
+        ).then(
+            fn=lambda s: gr.update(visible=bool(s.get("kb_ready"))),
+            inputs=[state],
+            outputs=[kb_row],
+        ).then(
+            fn=lambda s: gr.update(visible=bool(s.get("kb_ready"))),
+            inputs=[state],
+            outputs=[clear_kb_btn],
+        ).then(
+            fn=lambda s: (
+                f"📁 **{s.get('kb_domain', '')}**"
+                if s.get("kb_ready")
+                else "⚠️ Chưa có tài liệu."
+            ),
+            inputs=[state],
             outputs=[domain_display],
         )
 

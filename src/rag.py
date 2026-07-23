@@ -487,7 +487,94 @@ async def index_crawl_results(
     }
 
 
-# ---------------------------------------------------------------------------
+async def index_doc_chunks(
+    chunks: list,  # list[src.chunker.Chunk]
+    *,
+    replace: bool = False,
+) -> dict[str, int]:
+    """Index pre-computed Chunk objects from src.chunker into Qdrant.
+
+    This is the counterpart of index_crawl_results for the file-upload
+    flow. The caller is responsible for loading + chunking the documents
+    (via src.doc_loader + src.chunker); this function only handles
+    embedding and indexing.
+
+    Parameters
+    ----------
+    chunks:
+        List of Chunk objects from src.chunker.chunk_pages().
+        Parent chunks (is_parent=True) are indexed but should NOT be
+        used for direct retrieval — they are stored for context lookup.
+    replace:
+        When True, drops the existing collection before indexing so
+        re-uploads start clean. When False, appends to the existing KB.
+
+    Returns
+    -------
+    dict shaped like {"indexed": N, "skipped_parents": M}
+    """
+    settings = get_settings()
+
+    # Separate retrieval chunks from parent chunks
+    retrieval = [c for c in chunks if not c.is_parent]
+    parents = [c for c in chunks if c.is_parent]
+
+    if not retrieval:
+        logger.info("No retrieval chunks to index")
+        return {"indexed": 0, "skipped_parents": len(parents)}
+
+    texts = [c.text for c in retrieval]
+    payloads = [
+        {
+            "text": c.text,
+            "url": c.metadata.get("source", ""),
+            "title": c.metadata.get("title", c.metadata.get("source", "")),
+            "page_chunk_index": c.chunk_index,
+            "page_chunk_total": len(retrieval),
+            "doc_type": c.metadata.get("doc_type", ""),
+            "page_num": c.metadata.get("page_num", 0),
+            "chunk_strategy": c.strategy,
+            "parent_id": c.parent_id or "",
+        }
+        for c in retrieval
+    ]
+
+    vectors = await _embed_in_batches(texts)
+
+    if qdrant_available and qdrant_client is not None:
+        client = _get_qdrant()
+        if replace:
+            reset_collection(client)
+        _ensure_collection(client, vector_size=settings.rag_embedding_size)
+        ids = [uuid.uuid4().hex for _ in retrieval]
+        _upsert_points(client, ids=ids, vectors=vectors, payloads=payloads)
+        logger.info(
+            "Indexed doc chunks into Qdrant",
+            indexed=len(retrieval),
+            skipped_parents=len(parents),
+        )
+    else:
+        # In-memory fallback
+        global _IN_MEMORY_STORE
+        if replace:
+            _IN_MEMORY_STORE.clear()
+        for chunk_obj, vector, payload in zip(retrieval, vectors, payloads):
+            _IN_MEMORY_STORE.append({
+                "vector": vector,
+                "text": chunk_obj.text,
+                "url": payload["url"],
+                "title": payload["title"],
+                "page_chunk_index": chunk_obj.chunk_index,
+                "page_chunk_total": len(retrieval),
+            })
+        logger.info(
+            "Indexed doc chunks into in-memory store",
+            indexed=len(retrieval),
+        )
+
+    return {"indexed": len(retrieval), "skipped_parents": len(parents)}
+
+
 # Search
 # ---------------------------------------------------------------------------
 
