@@ -588,62 +588,41 @@ def build_ui() -> gr.Blocks:
     ) as demo:
         state = gr.State(value=initial_state)
 
-        with gr.Row():
-            # ---------------- Left column: chat ----------------
-            with gr.Column(scale=3):
-                # Gradio 6: Chatbot uses 'messages' format by default
-                # (no need for type="messages").
-                chatbot = gr.Chatbot(
-                    label="Chat",
-                    height=500,
-                    show_label=False,
-                    value=[
-                        {
-                            "role": "assistant",
-                            "content": (
-                                "Xin chào! Tôi có thể giúp gì cho bạn?\n"
-                                "Nếu bạn cần thông tin chính xác từ nguồn có sẵn, "
-                                "hãy dùng chức năng Fetch & Index trước khi đặt câu hỏi."
-                            ),
-                        }
-                    ],
-                )
-
-                # Model selector row.
-                with gr.Row():
-                    model_buttons = _build_model_buttons()
-
-                # Context window display — shows the active model's
-                # context window size. Updated when a model button is
-                # clicked.
-                context_window_display = gr.Markdown(
-                    value=_context_window_label(DEFAULT_MODEL),
-                )
-
-                # Token usage display — shows used / total tokens for
-                # the current request. Updated after every chat turn.
-                token_usage_display = gr.Markdown(
-                    value=_format_usage(0, CONTEXT_WINDOWS[DEFAULT_MODEL]),
-                )
-
-                # Input row.
-                with gr.Row():
-                    msg = gr.Textbox(
-                        placeholder="Nhập câu hỏi...",
-                        show_label=False,
-                        scale=5,
-                        lines=1,
-                    )
-                    send_btn = gr.Button("Gửi", variant="primary", scale=1)
-
-            # ---------------- Right column: control panel ----------------
+        # ---------------- Hàng 1: Panel Điều khiển (Top Bar) ----------------
+        with gr.Row(equal_height=False):
+            # Cột 1: Website Fetching
             with gr.Column(scale=1):
-                gr.Markdown("### 📄 Nguồn tài liệu")
+                gr.Markdown("### 🔗 Fetch Website")
+                url_input = gr.Textbox(
+                    placeholder="https://stripe.com",
+                    show_label=False,
+                    lines=1,
+                )
+                fetch_btn = gr.Button("Fetch & Index", variant="primary")
 
-                # Status area (always visible).
+            # Cột 2: File Upload (PDF/Word/Excel/MD)
+            with gr.Column(scale=1):
+                gr.Markdown("### 📁 Upload File (PDF/Doc/Xls/MD)")
+                file_upload = gr.File(
+                    label="Chọn file",
+                    file_count="multiple",
+                    file_types=supported_extensions(),
+                    show_label=False,
+                    height=80,
+                )
+                chunk_strategy_dropdown = gr.Dropdown(
+                    choices=CHUNK_STRATEGY_LABELS,
+                    value=CHUNK_STRATEGY_LABELS[0],
+                    label="Chunking Strategy",
+                    info="Cách chia nhỏ tài liệu",
+                )
+                upload_btn = gr.Button("Upload & Index", variant="secondary")
+
+            # Cột 3: Trạng thái KB & Cấu hình Retrieval
+            with gr.Column(scale=1):
+                gr.Markdown("### 📄 KB Status & Retrieval")
                 status = gr.Markdown("⚠️ Chưa có tài liệu.")
 
-                # Domain display + X button (visible only when KB is ready).
                 with gr.Row(visible=False) as kb_row:
                     domain_display = gr.Markdown("🔗 ...")
                     clear_x_btn = gr.Button("✕", variant="stop", size="sm", scale=0)
@@ -654,47 +633,59 @@ def build_ui() -> gr.Blocks:
                     visible=False,
                 )
 
-                gr.Markdown("---")
-                gr.Markdown("**URL**")
-                url_input = gr.Textbox(
-                    placeholder="https://stripe.com",
-                    show_label=False,
-                )
-                fetch_btn = gr.Button("Fetch & Index", variant="primary")
-
-                # ---- File Upload Section (Week 1) ----
-                gr.Markdown("---")
-                gr.Markdown("**📁 Upload File** (PDF / Word / Excel / MD)")
-
-                file_upload = gr.File(
-                    label="Chọn file",
-                    file_count="multiple",
-                    file_types=supported_extensions(),
-                    show_label=False,
-                )
-
-                chunk_strategy_dropdown = gr.Dropdown(
-                    choices=CHUNK_STRATEGY_LABELS,
-                    value=CHUNK_STRATEGY_LABELS[0],
-                    label="Chunking Strategy",
-                    info="Cách chia nhỏ tài liệu trước khi index",
-                )
-
-                upload_btn = gr.Button("Upload & Index", variant="secondary")
-
-                # ---- Retrieval Optimization Section (Week 2) ----
-                gr.Markdown("---")
-                gr.Markdown("**⚙️ Retrieval Optimization (Week 2)**")
+                gr.Markdown("**⚙️ Search Optimization**")
                 enable_hybrid_cb = gr.Checkbox(
                     label="Hybrid Search (BM25 + Dense RRF)",
                     value=True,
-                    info="Kết hợp tìm từ khóa và ngữ nghĩa",
+                    info="Kết hợp từ khóa và ngữ nghĩa",
                 )
                 enable_rerank_cb = gr.Checkbox(
                     label="Cross-Encoder Reranking",
                     value=True,
-                    info="Tái xếp hạng candidates bằng ms-marco model",
+                    info="Tái xếp hạng bằng ms-marco model",
                 )
+
+        gr.Markdown("---")
+
+        # ---------------- Hàng 2: Khu vực Chat (Main Chat Area) ----------------
+        with gr.Column():
+            chatbot = gr.Chatbot(
+                label="Chat",
+                height=480,
+                show_label=False,
+                value=[
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "Xin chào! Tôi có thể giúp gì cho bạn?\n"
+                            "Nếu bạn cần thông tin chính xác từ nguồn có sẵn, "
+                            "hãy dùng chức năng Fetch & Index hoặc Upload File bên trên."
+                        ),
+                    }
+                ],
+            )
+
+            # Model selector row.
+            with gr.Row():
+                model_buttons = _build_model_buttons()
+
+            with gr.Row():
+                context_window_display = gr.Markdown(
+                    value=_context_window_label(DEFAULT_MODEL),
+                )
+                token_usage_display = gr.Markdown(
+                    value=_format_usage(0, CONTEXT_WINDOWS[DEFAULT_MODEL]),
+                )
+
+            # Input row.
+            with gr.Row():
+                msg = gr.Textbox(
+                    placeholder="Nhập câu hỏi...",
+                    show_label=False,
+                    scale=5,
+                    lines=1,
+                )
+                send_btn = gr.Button("Gửi", variant="primary", scale=1)
 
         # ---------------- Event wiring ----------------
 
