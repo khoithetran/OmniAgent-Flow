@@ -207,6 +207,18 @@ def reset_collection(client: QdrantClient) -> None:
     logger.info("Deleted Qdrant collection", collection=settings.qdrant_collection)
 
 
+def drop_knowledge_base() -> None:
+    """Drop the knowledge base collection in Qdrant and clear in-memory fallback store."""
+    global _IN_MEMORY_STORE
+    _IN_MEMORY_STORE.clear()
+    if qdrant_available and qdrant_client is not None:
+        try:
+            reset_collection(qdrant_client)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to reset Qdrant collection", error=str(exc))
+    logger.info("Knowledge base dropped")
+
+
 # ---------------------------------------------------------------------------
 # Embedding helpers
 # ---------------------------------------------------------------------------
