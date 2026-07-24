@@ -57,8 +57,15 @@ async def test_handle_chat_no_api_key_no_kb():
     """When no API key is configured, bot returns the missing-key reply."""
     state = _empty_state()
     history: list = []
-    with patch("app_gradio.get_settings") as mock_settings:
+    with patch("app_gradio.get_settings") as mock_settings, \
+         patch("src.chat.get_settings") as mock_chat_settings, \
+         patch("src.config.get_settings") as mock_config_settings:
         mock_settings.return_value.openai_api_key_value = None
+        mock_settings.return_value.anthropic_api_key_value = None
+        mock_chat_settings.return_value.openai_api_key_value = None
+        mock_chat_settings.return_value.anthropic_api_key_value = None
+        mock_config_settings.return_value.openai_api_key_value = None
+        mock_config_settings.return_value.anthropic_api_key_value = None
         out_history = None
         async for h, s, _usage in handle_chat("hello", history, state):
             out_history = h
@@ -67,7 +74,7 @@ async def test_handle_chat_no_api_key_no_kb():
     assert out_history is not None
     assert out_history[-1]["role"] == "assistant"
     # Use a substring that's safe across encodings.
-    assert "OpenAI key" in out_history[-1]["content"], (
+    assert "chưa được cấu hình" in out_history[-1]["content"] or "API key" in out_history[-1]["content"], (
         f"Got: {out_history[-1]['content']}"
     )
     print("PASS test_handle_chat_no_api_key_no_kb")

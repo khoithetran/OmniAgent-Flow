@@ -22,6 +22,9 @@ tiktoken>=0.7.0          # Tokenizer-aware chunking (OpenAI BPE)
 
 # --- LLM Providers ---
 anthropic>=0.30.0              # Anthropic Claude API SDK
+langchain-core>=0.3.0          # LangChain Expression Language (LCEL)
+langchain-openai>=0.2.0        # LangChain OpenAI integration
+langchain-anthropic>=0.3.0     # LangChain Anthropic integration
 sentence-transformers>=3.0.0  # Cross-encoder reranking
 rank-bm25>=0.2.2              # BM25 sparse keyword search
 # --- AI Agent & RAG Evaluation (Week 3) ---

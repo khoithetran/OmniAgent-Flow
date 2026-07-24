@@ -20,8 +20,8 @@ with gr.Blocks() as demo:
             return (new_state, *variants, label)
         return _handler
 
-    # Test handler for gpt-4o
-    handler = _make_select_handler("gpt-4o")
+    # Test handler for OpenAI - GPT 5.4
+    handler = _make_select_handler("OpenAI - GPT 5.4")
     s = {"selected_model": ag.DEFAULT_MODEL, "kb_ready": False,
          "kb_domain": "", "kb_pages": 0, "kb_chunks": 0, "kb_url": ""}
     result = handler(s)
@@ -29,5 +29,5 @@ with gr.Blocks() as demo:
     print("Value 0 (state):", result[0])
     print("Value 1 (btn1 update):", result[1])
     print("Value 2 (btn2 update):", result[2])
-    print("Value 3 (btn3 update):", result[3])
-    print("Value 4 (label):", result[4])
+    print("Value 3 (label):", result[3])
+    assert len(result) == 4

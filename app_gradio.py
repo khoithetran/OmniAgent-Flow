@@ -539,14 +539,14 @@ def _build_model_buttons() -> list[gr.Button]:
     """Build the model selector row as a list of Gradio buttons."""
     buttons = []
     for model_name in MODELS:
-        is_openai = "OpenAI" in model_name
-        label = f"🚫 {model_name} (Hết kinh phí)" if is_openai else f"⚡ {model_name}"
+        is_default = model_name == DEFAULT_MODEL
+        label = f"⚡ {model_name}"
         btn = gr.Button(
             label,
-            variant="secondary" if is_openai else "primary",
+            variant="primary" if is_default else "secondary",
             size="sm",
             min_width=180,
-            interactive=not is_openai,  # Disabled / grayed out for OpenAI
+            interactive=True,  # All models enabled with LCEL Fallback support
         )
         buttons.append(btn)
     return buttons
@@ -556,7 +556,7 @@ def _button_variants(selected: str) -> list[gr.update]:
     return [
         gr.update(
             variant="primary" if m == selected else "secondary",
-            interactive="OpenAI" not in m,
+            interactive=True,
         )
         for m in MODELS
     ]
